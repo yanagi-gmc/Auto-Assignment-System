@@ -520,46 +520,72 @@ async function extractTextFromPDF(file) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    let lastY = null;
+    // Sort items: y descending (top of page first), then x ascending (left to right)
+    const items = content.items
+      .filter(item => item.str)
+      .map(item => ({ x: item.transform[4], y: item.transform[5], str: item.str }))
+      .sort((a, b) => Math.abs(b.y - a.y) > 1 ? b.y - a.y : a.x - b.x);
+    // Group into lines with 8pt y-tolerance
+    let lineY = null;
     let line = "";
-    for (const item of content.items) {
-      const y = Math.round(item.transform[5]);
-      if (lastY !== null && Math.abs(y - lastY) > 2) {
-        fullText += line + "\n";
+    for (const item of items) {
+      if (lineY === null || Math.abs(item.y - lineY) > 8) {
+        if (line) fullText += line + "\n";
         line = item.str;
+        lineY = item.y;
       } else {
         line += item.str;
       }
-      lastY = y;
     }
     if (line) fullText += line + "\n";
   }
   return fullText;
 }
-function parseGRFields(text) {
-  const get = (pattern) => { const m = text.match(pattern); return m ? m[1].trim() : ""; };
-  const getNum = (pattern) => { const m = text.match(pattern); return m ? parseInt(m[1].replace(/,/g, ""), 10) : ""; };
-  const grRep = get(/担当[：:]\s*(.+)/m);
-  const contractName = get(/契約者名[：:]\s*(.+)/m);
-  const authorRaw = get(/著者名[：:]\s*(.+)/m);
-  const titleRaw = get(/タイトル[：:]\s*(.+)/m);
-  let title = titleRaw, subtitle = "";
-  const sepMatch = titleRaw.match(/^(.+?)\s*[　 ](～.+)$/) || titleRaw.match(/^(.+?)(～.+)$/);
-  if (sepMatch) { title = sepMatch[1].trim(); subtitle = sepMatch[2].trim(); }
-  const roughUpDate = get(/ラフUP希望日[：:]\s*(.+)/m);
-  const submissionDate = get(/入稿予定日[：:]\s*(.+)/m);
-  const deadline = get(/刊行予定日[：:]\s*(.+)/m);
-  const price = getNum(/定価[：:]\s*([\d,]+)円/m);
-  const format = get(/判型[（(]組み方[）)][：:]\s*(.+)/m);
-  const productionNo = get(/制作番号[：:]\s*(\d+)/m);
-  const totalFee = getNum(/依頼費[：:]\s*([\d,]+)円/m);
-  const designFee = getNum(/デザイン費[\s　]*([\d,]+)円/m);
-  const illustFee = getNum(/イラスト費[\s　]*([\d,]+)円/m);
+function parseGRFields(text, filename = "") {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+
+  // === 1. Parse filename (most reliable source since Japanese labels are unreadable in PDF) ===
+  // e.g. 【カバー発注依頼】岩田彰人様 「通信制高校は人生はじまり」（25457）＿GR田口.pdf
+  let grRep = "", author = "", title = "", subtitle = "", productionNo = "";
+  const fnm = filename.replace(/\.pdf$/i, "");
+  const fnMatch = fnm.match(/【カバー発注依頼】(.+?)様[\s　]*[「『](.+?)[」』][（(](\d+)[）)].*?GR(.+)$/);
+  if (fnMatch) {
+    author = fnMatch[1].trim();
+    const rawTitle = fnMatch[2].trim();
+    const subMatch = rawTitle.match(/^(.+?)\s*(～.+)$/);
+    if (subMatch) { title = subMatch[1].trim(); subtitle = subMatch[2].trim(); }
+    else title = rawTitle;
+    productionNo = fnMatch[3];
+    grRep = "GR" + fnMatch[4].trim();
+  }
+
+  // === 2. Parse dates from text (form dates: 2026/6 or 2026/6/30, not email dates like "2026 3 5") ===
+  const formDates = lines.filter(l => /^20\d\d\/\d{1,2}(\/\d{1,2})?$/.test(l));
+  const roughUpDate = formDates[0] || "";
+  const submissionDate = formDates[1] || "";
+  const deadline = formDates[2] || "";
+
+  // === 3. Parse price (定価): small amount like 1,600 ===
+  const priceLine = lines.find(l => /^\d,\d{3}$/.test(l));
+  const price = priceLine ? parseInt(priceLine.replace(/,/g, ""), 10) : "";
+
+  // === 4. Parse fees (依頼費, デザイン費, イラスト費): large amounts like 180,000 ===
+  const feeAmounts = [];
+  for (const line of lines) {
+    for (const m of line.matchAll(/(\d{2,3},\d{3})/g)) {
+      const n = parseInt(m[1].replace(/,/g, ""), 10);
+      if (n >= 10000) feeAmounts.push(n);
+    }
+  }
+
   return {
-    grRep, contractName, author: authorRaw, title, subtitle,
+    grRep, contractName: "", author, title, subtitle,
     roughUpDate, submissionDate, deadline,
-    price: price || "", format,
-    productionNo, totalFee: totalFee || "", designFee: designFee || "", illustFee: illustFee || "",
+    price: price || "",
+    productionNo,
+    totalFee: feeAmounts[0] || "",
+    designFee: feeAmounts[1] || "",
+    illustFee: feeAmounts[2] || "",
   };
 }
 // =====================
@@ -599,7 +625,9 @@ function RegisterTab({ onRegister }) {
     setParseMsg("");
     try {
       const text = await extractTextFromPDF(file);
-      const fields = parseGRFields(text);
+      console.log("[PDF extracted text]", text.slice(0, 2000));
+      const fields = parseGRFields(text, file.name);
+      console.log("[PDF parsed fields]", fields);
       const count = Object.values(fields).filter(v => v !== "" && v !== 0).length;
       if (count > 0) {
         setGrForm(prev => ({ ...prev, ...fields, pdfFile: file.name, pdfData: objectUrl }));
