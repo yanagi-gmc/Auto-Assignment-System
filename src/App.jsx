@@ -175,17 +175,19 @@ function InfoRow({ label, value }) {
 function DashboardTab({ projects, staff }) {
   const unassigned = projects.filter(p => p.status === "未割当").length;
   const assigned = projects.filter(p => p.status === "担当決定済").length;
-  const gmcCount = projects.filter(p => p.type === "GMC").length;
-  const grCount = projects.filter(p => p.type === "GR").length;
+  const archived = projects.filter(p => p.status === "入稿完了").length;
+  const active = projects.filter(p => p.status !== "入稿完了").length;
+  const gmcCount = projects.filter(p => p.type === "GMC" && p.status !== "入稿完了").length;
+  const grCount = projects.filter(p => p.type === "GR" && p.status !== "入稿完了").length;
   const staffLoads = staff.map(s => ({ ...s, load: getStaffLoad(s.id, projects) }));
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="総案件数" value={projects.length} sub={`GMC ${gmcCount} / GR ${grCount}`} color="blue" />
+        <StatCard label="進行中案件数" value={active} sub={`GMC ${gmcCount} / GR ${grCount}`} color="blue" />
         <StatCard label="未割当" value={unassigned} sub="要対応" color={unassigned > 0 ? "red" : "green"} />
         <StatCard label="担当決定済" value={assigned} color="green" />
-        <StatCard label="ディレクター" value={staff.filter(s => s.role === "ディレクター").length} sub="名" color="purple" />
-        <StatCard label="エキスパート" value={staff.filter(s => s.role === "エキスパート").length} sub="名" color="yellow" />
+        <StatCard label="入稿完了" value={archived} sub="アーカイブ済" color="purple" />
+        <StatCard label="スタッフ" value={staff.length} sub={`D:${staff.filter(s=>s.role==="ディレクター").length} E:${staff.filter(s=>s.role==="エキスパート").length}`} color="yellow" />
       </div>
       {unassigned > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
@@ -246,15 +248,203 @@ function DashboardTab({ projects, staff }) {
   );
 }
 // =====================
+// CSVインポートモーダル
+// =====================
+function CSVImportModal({ staff, onImport, onClose }) {
+  const [step, setStep] = useState("input");
+  const [csvText, setCsvText] = useState("");
+  const [preview, setPreview] = useState([]);
+  const [parseError, setParseError] = useState("");
+
+  const parse = () => {
+    if (!csvText.trim()) { setParseError("データを貼り付けてください"); return; }
+    const lines = csvText.trim().split("\n").filter(l => l.trim());
+    if (lines.length < 2) { setParseError("ヘッダー行とデータ行が必要です（2行以上）"); return; }
+    const sep = lines[0].includes("\t") ? "\t" : ",";
+    const headers = lines[0].split(sep).map(h => h.trim().replace(/[\r"]/g, ""));
+    const rows = lines.slice(1).map((line, idx) => {
+      const vals = line.split(sep).map(v => v.trim().replace(/[\r"]/g, ""));
+      const get = (...keys) => {
+        for (const k of keys) {
+          const i = headers.findIndex(h => h === k);
+          if (i >= 0 && vals[i]) return vals[i];
+        }
+        return "";
+      };
+      const typeName = get("種別", "type");
+      const type = typeName === "GR" ? "GR" : "GMC";
+      const title = get("タイトル", "書名");
+      const author = get("著者名", "著者");
+      const staffName = get("担当者", "担当者名", "デザイン担当", "D担当", "担当");
+      const staffObj = staffName ? staff.find(s => s.name === staffName || s.name.includes(staffName) || staffName.includes(s.name)) : null;
+      const status = staffObj ? "担当決定済" : "未割当";
+      const deadline = get("納期", "刊行予定日", "刊行日");
+      const genre = get("ジャンル") || (type === "GMC" ? "ビジネス" : "その他");
+      const pages = parseInt(get("ページ数", "頁数", "ページ")) || 0;
+      const registeredDate = get("登録日") || new Date().toISOString().slice(0, 10);
+      return {
+        _rowNum: idx + 2, _valid: !!(title && author),
+        _staffName: staffName, _staffFound: !!staffObj,
+        id: Date.now() + idx * 1000 + Math.floor(Math.random() * 999),
+        type, title, author, genre, deadline, pages, status,
+        assignedTo: staffObj ? staffObj.id : null,
+        registeredDate, subtitle: get("サブタイトル") || "",
+        clientName: get("クライアント名", "クライアント") || "",
+        productionNo: get("制作番号") || "",
+        grRep: get("GR担当", "GR") || "",
+        salesRep: get("GMC営業担当", "営業担当") || "",
+        editContact: get("GMC編集窓口", "編集窓口") || "",
+        printRun: parseInt(get("発行部数")) || 0,
+        price: parseInt(get("定価")) || 0,
+        summary: get("概要") || "", notes: get("備考") || "",
+        pdfFile: "", format: get("判型") || (type === "GMC" ? "四六判単行本" : "四六判並製"),
+      };
+    });
+    if (rows.length === 0) { setParseError("データが見つかりませんでした"); return; }
+    setParseError(""); setPreview(rows); setStep("preview");
+  };
+
+  const validRows = preview.filter(r => r._valid);
+  const invalidRows = preview.filter(r => !r._valid);
+
+  const doImport = () => {
+    const clean = validRows.map(({ _rowNum, _valid, _staffName, _staffFound, ...rest }) => rest);
+    onImport(clean);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-6 border-b border-gray-200 bg-gray-50 rounded-t-xl flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800">📂 CSVインポート（一括登録）</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        <div className="p-6">
+          {step === "input" && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-2">
+                <p className="font-semibold">📋 使い方</p>
+                <p>ExcelやGoogleスプレッドシートのデータを<strong>全体コピー</strong>して下の欄に貼り付けてください。</p>
+                <p className="font-medium mt-2">対応している列名（1行目をヘッダーにしてください）：</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1 mt-1 text-xs bg-white rounded p-3 border border-blue-100">
+                  {[
+                    ["種別 *", "GMC または GR"],
+                    ["タイトル *", "書名（必須）"],
+                    ["著者名 *", "著者（必須）"],
+                    ["担当者", "スタッフ名（一致で自動紐付け）"],
+                    ["ジャンル", "省略時: GMC=ビジネス, GR=その他"],
+                    ["納期", "刊行予定日も可"],
+                    ["ページ数", "頁数も可"],
+                    ["クライアント名", "GMC用"],
+                    ["制作番号", "GR用"],
+                    ["GR担当", "GR担当者名"],
+                    ["登録日", "省略時は今日の日付"],
+                    ["概要 / 備考", "メモ"],
+                  ].map(([k, v]) => (
+                    <div key={k}><span className="font-medium">{k}</span><span className="text-blue-600 ml-1">= {v}</span></div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">データを貼り付け（タブ区切り・カンマ区切りどちらも対応）</label>
+                <textarea
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono h-48 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder={"種別\tタイトル\t著者名\t担当者\t納期\tジャンル\nGMC\t経営の教科書\t山田太郎\t窪田雅也\t2026-08-30\tビジネス\nGR\t心の旅路\t佐藤花子\t稲場俊哉\t2026-07-15\t文学"}
+                  value={csvText}
+                  onChange={e => { setCsvText(e.target.value); setParseError(""); }}
+                />
+              </div>
+              {parseError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">{parseError}</p>}
+              <div className="flex gap-3">
+                <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-600 text-sm font-medium hover:bg-gray-50">キャンセル</button>
+                <button onClick={parse} className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">解析してプレビュー →</button>
+              </div>
+            </div>
+          )}
+          {step === "preview" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-4 text-sm">
+                  <span className="text-green-700 font-semibold">✓ 登録可能: {validRows.length}件</span>
+                  {invalidRows.length > 0 && <span className="text-red-600 font-medium">✗ スキップ: {invalidRows.length}件</span>}
+                </div>
+                <button onClick={() => setStep("input")} className="text-xs text-indigo-600 hover:underline">← 修正する</button>
+              </div>
+              <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr className="text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left">行</th>
+                      <th className="px-3 py-2 text-left">種別</th>
+                      <th className="px-3 py-2 text-left">タイトル</th>
+                      <th className="px-3 py-2 text-left">著者名</th>
+                      <th className="px-3 py-2 text-left">担当者</th>
+                      <th className="px-3 py-2 text-left">納期</th>
+                      <th className="px-3 py-2 text-left">ステータス</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {preview.map(row => (
+                      <tr key={row._rowNum} className={!row._valid ? "bg-red-50 opacity-60" : ""}>
+                        <td className="px-3 py-2 text-gray-400">{row._rowNum}</td>
+                        <td className="px-3 py-2"><Badge color={row.type === "GMC" ? "blue" : "indigo"}>{row.type}</Badge></td>
+                        <td className="px-3 py-2 font-medium text-gray-800 max-w-xs truncate">{row.title || <span className="text-red-500">未入力</span>}</td>
+                        <td className="px-3 py-2 text-gray-600">{row.author || <span className="text-red-500">未入力</span>}</td>
+                        <td className="px-3 py-2">
+                          {row._staffName
+                            ? row._staffFound
+                              ? <span className="text-green-700 font-medium">{row._staffName} ✓</span>
+                              : <span className="text-amber-600">{row._staffName} ⚠</span>
+                            : <span className="text-gray-400">-</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{row.deadline || "-"}</td>
+                        <td className="px-3 py-2">
+                          <Badge color={row.status === "担当決定済" ? "green" : "red"}>{row.status}</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {preview.some(r => r._staffName && !r._staffFound) && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  ⚠ ⚠マークの担当者名はスタッフ一覧と一致しませんでした。「未割当」として登録されます。スタッフ管理で名前を確認してください。
+                </p>
+              )}
+              {invalidRows.length > 0 && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
+                  ✗ タイトルまたは著者名が空の行はスキップされます。
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button onClick={() => setStep("input")} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-600 text-sm font-medium hover:bg-gray-50">← 修正する</button>
+                <button
+                  onClick={doImport}
+                  disabled={validRows.length === 0}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-colors ${validRows.length > 0 ? "bg-green-600 hover:bg-green-700" : "bg-gray-300 cursor-not-allowed"}`}>
+                  {validRows.length}件を一括登録する
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+// =====================
 // 案件一覧 タブ
 // =====================
 function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("active");
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
   const filtered = projects.filter(p => {
     if (filter === "unassigned" && p.status !== "未割当") return false;
     if (filter === "assigned" && p.status !== "担当決定済") return false;
+    if (filter === "archived" && p.status !== "入稿完了") return false;
+    if (filter === "active" && p.status === "入稿完了") return false;
     if (typeFilter === "GMC" && p.type !== "GMC") return false;
     if (typeFilter === "GR" && p.type !== "GR") return false;
     if (search) {
@@ -266,13 +456,18 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
     }
     return true;
   });
+  const archivedCount = projects.filter(p => p.status === "入稿完了").length;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        {[["all", "すべて"], ["unassigned", "未割当"], ["assigned", "決定済"]].map(([v, l]) => (
+        {[["active", "進行中"], ["unassigned", "未割当"], ["assigned", "決定済"], ["all", "すべて"]].map(([v, l]) => (
           <button key={v} onClick={() => setFilter(v)}
             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === v ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{l}</button>
         ))}
+        <button onClick={() => setFilter("archived")}
+          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${filter === "archived" ? "bg-gray-500 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+          アーカイブ {archivedCount > 0 && <span className={`text-xs px-1.5 rounded-full ${filter === "archived" ? "bg-white text-gray-700" : "bg-gray-400 text-white"}`}>{archivedCount}</span>}
+        </button>
         <span className="border-l border-gray-300 mx-1 h-5" />
         {[["all", "全種別"], ["GMC", "GMC"], ["GR", "GR"]].map(([v, l]) => (
           <button key={v} onClick={() => setTypeFilter(v)}
@@ -301,7 +496,7 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(p => (
-              <tr key={p.id} className={`hover:bg-gray-50 ${p.status === "未割当" ? "bg-yellow-50" : ""}`}>
+              <tr key={p.id} className={`hover:bg-gray-50 ${p.status === "未割当" ? "bg-yellow-50" : p.status === "入稿完了" ? "opacity-60" : ""}`}>
                 <td className="px-4 py-3"><Badge color={p.type === "GMC" ? "blue" : "indigo"}>{p.type}</Badge></td>
                 <td className="px-4 py-3">
                   <div className="font-medium text-gray-800">{p.title}</div>
@@ -311,7 +506,7 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
                 <td className="px-4 py-3"><Badge color="gray">{p.genre}</Badge></td>
                 <td className="px-4 py-3 text-gray-600 text-xs">{p.deadline || "-"}</td>
                 <td className="px-4 py-3 text-gray-600">{p.pages || "-"}</td>
-                <td className="px-4 py-3"><Badge color={p.status === "未割当" ? "red" : "green"}>{p.status}</Badge></td>
+                <td className="px-4 py-3"><Badge color={p.status === "未割当" ? "red" : p.status === "入稿完了" ? "gray" : "green"}>{p.status}</Badge></td>
                 <td className="px-4 py-3 text-gray-600 text-xs">{p.assignedTo ? staff.find(s => s.id === p.assignedTo)?.name || "-" : "-"}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
@@ -341,7 +536,7 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
 // =====================
 // 案件詳細＆割り振りモーダル
 // =====================
-function ProjectDetailModal({ project, staff, projects, onAssign, onClose }) {
+function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onClose }) {
   const [selected, setSelected] = useState(project.assignedTo);
   const [showAssign, setShowAssign] = useState(project.status === "未割当");
   const recommendations = getRecommendations(project, staff, projects);
@@ -508,6 +703,16 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onClose }) {
                   }`}>
                   担当者を決定
                 </button>
+              </div>
+            )}
+            {project.status === "担当決定済" && !showAssign && onArchive && (
+              <div className="mt-4 border-t border-gray-200 pt-4">
+                <button
+                  onClick={() => { onArchive(project.id); onClose(); }}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-100 text-sm font-medium transition-colors">
+                  ✓ 入稿完了にする（アーカイブ）
+                </button>
+                <p className="text-xs text-gray-400 mt-1 text-center">担当件数から除外されます</p>
               </div>
             )}
           </div>
@@ -739,7 +944,7 @@ function parseTSOFields(text, filename = "") {
 // =====================
 // 新規案件登録 タブ
 // =====================
-function RegisterTab({ onRegister }) {
+function RegisterTab({ onRegister, onOpenCSVImport }) {
   const [projectType, setProjectType] = useState("GMC");
   const fileInputRef = React.useRef(null);
   const today = new Date().toISOString().slice(0, 10);
@@ -822,7 +1027,18 @@ function RegisterTab({ onRegister }) {
   const inputClass = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
   const labelClass = "block text-xs font-medium text-gray-600 mb-1";
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto space-y-4">
+      {/* 一括インポートバナー */}
+      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-indigo-800">既存案件を一括登録しますか？</p>
+          <p className="text-xs text-indigo-600 mt-0.5">ExcelやGoogleスプレッドシートのデータをコピー＆ペーストで一括インポートできます</p>
+        </div>
+        <button onClick={onOpenCSVImport}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors whitespace-nowrap ml-4">
+          📂 一括インポート
+        </button>
+      </div>
       <div className="bg-white rounded-lg shadow-sm p-6">
         {/* 種別切替 */}
         <div className="flex gap-2 mb-6">
@@ -1580,6 +1796,7 @@ export default function App() {
   const [projects, setProjects] = useState(SAMPLE_PROJECTS);
   const [selectedProject, setSelectedProject] = useState(null);
   const [editingProject, setEditingProject] = useState(null);
+  const [showCSVImport, setShowCSVImport] = useState(false);
   const handleAssign = (projectId, staffId) => {
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assignedTo: staffId, status: "担当決定済" } : p));
   };
@@ -1589,6 +1806,13 @@ export default function App() {
   };
   const handleUpdate = (updatedProject) => {
     setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+  };
+  const handleBulkImport = (newProjects) => {
+    setProjects(prev => [...prev, ...newProjects]);
+    setTab("projects");
+  };
+  const handleArchive = (projectId) => {
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, status: "入稿完了" } : p));
   };
   const tabs = [
     { id: "dashboard", label: "ダッシュボード" },
@@ -1631,7 +1855,7 @@ export default function App() {
         {tab === "dashboard" && <DashboardTab projects={projects} staff={staff} />}
         {tab === "projects" && <ProjectListTab projects={projects} staff={staff} onSelectProject={setSelectedProject} onEditProject={setEditingProject} />}
         {tab === "monthly" && <MonthlyTab projects={projects} staff={staff} />}
-        {tab === "register" && <RegisterTab onRegister={handleRegister} />}
+        {tab === "register" && <RegisterTab onRegister={handleRegister} onOpenCSVImport={() => setShowCSVImport(true)} />}
         {tab === "staff" && <StaffTab staff={staff} setStaff={setStaff} projects={projects} />}
       </main>
       {selectedProject && (
@@ -1640,6 +1864,7 @@ export default function App() {
           staff={staff}
           projects={projects}
           onAssign={handleAssign}
+          onArchive={handleArchive}
           onClose={() => setSelectedProject(null)}
         />
       )}
@@ -1648,6 +1873,13 @@ export default function App() {
           project={editingProject}
           onUpdate={handleUpdate}
           onClose={() => setEditingProject(null)}
+        />
+      )}
+      {showCSVImport && (
+        <CSVImportModal
+          staff={staff}
+          onImport={handleBulkImport}
+          onClose={() => setShowCSVImport(false)}
         />
       )}
     </div>
