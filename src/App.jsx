@@ -248,7 +248,7 @@ function DashboardTab({ projects, staff }) {
 // =====================
 // 案件一覧 タブ
 // =====================
-function ProjectListTab({ projects, staff, onSelectProject }) {
+function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
   const [filter, setFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -314,14 +314,20 @@ function ProjectListTab({ projects, staff, onSelectProject }) {
                 <td className="px-4 py-3"><Badge color={p.status === "未割当" ? "red" : "green"}>{p.status}</Badge></td>
                 <td className="px-4 py-3 text-gray-600 text-xs">{p.assignedTo ? staff.find(s => s.id === p.assignedTo)?.name || "-" : "-"}</td>
                 <td className="px-4 py-3">
-                  <button onClick={() => onSelectProject(p)}
-                    className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                      p.status === "未割当"
-                        ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}>
-                    {p.status === "未割当" ? "割り振る" : "詳細"}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => onSelectProject(p)}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                        p.status === "未割当"
+                          ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}>
+                      {p.status === "未割当" ? "割り振る" : "詳細"}
+                    </button>
+                    <button onClick={() => onEditProject(p)}
+                      className="px-3 py-1 rounded text-xs font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors border border-amber-200">
+                      編集
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -736,12 +742,13 @@ function parseTSOFields(text, filename = "") {
 function RegisterTab({ onRegister }) {
   const [projectType, setProjectType] = useState("GMC");
   const fileInputRef = React.useRef(null);
+  const today = new Date().toISOString().slice(0, 10);
   const emptyGMC = {
     title: "", subtitle: "", author: "", clientName: "", genre: "ビジネス",
     deadline: "", pages: "", format: "四六判単行本", printRun: "",
     salesRep: "", editContact: "", editPro: "", editProContact: "", writer: "",
     purpose: "", targetReader: "", summary: "", notes: "", pdfFile: "",
-    productionNo: "",
+    productionNo: "", registeredDate: today,
   };
   const emptyGR = {
     title: "", subtitle: "", author: "", contractName: "", genre: "その他",
@@ -750,6 +757,7 @@ function RegisterTab({ onRegister }) {
     designFee: "", illustFee: "", totalFee: "",
     meetingFormat: "オンライン", meetingTime: "",
     charCount: "", targetReader: "", summary: "", notes: "", pdfFile: "",
+    registeredDate: today,
   };
   const [gmcForm, setGmcForm] = useState(emptyGMC);
   const [grForm, setGrForm] = useState(emptyGR);
@@ -808,7 +816,6 @@ function RegisterTab({ onRegister }) {
       totalFee: parseInt(form.totalFee) || (parseInt(form.designFee) || 0) + (parseInt(form.illustFee) || 0),
       status: "未割当",
       assignedTo: null,
-      registeredDate: new Date().toISOString().slice(0, 10),
     });
     projectType === "GMC" ? setGmcForm(emptyGMC) : setGrForm(emptyGR);
   };
@@ -931,6 +938,12 @@ function RegisterTab({ onRegister }) {
                 </div>
               </div>
             )}
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className={labelClass}>登録日</label>
+                <input type="date" className={inputClass} value={form.registeredDate || ""} onChange={e => update("registeredDate", e.target.value)} />
+              </div>
+            </div>
           </fieldset>
           {/* 関係者 */}
           <fieldset className="border border-gray-200 rounded-lg p-4 space-y-4">
@@ -1052,6 +1065,219 @@ function RegisterTab({ onRegister }) {
             {projectType === "GMC" ? "GMC案件を登録" : "GR案件を登録"}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+// =====================
+// 案件編集モーダル
+// =====================
+function EditProjectModal({ project, onUpdate, onClose }) {
+  const [form, setForm] = useState({ ...project });
+  const [saveError, setSaveError] = useState("");
+  const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+  const inputClass = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
+  const labelClass = "block text-xs font-medium text-gray-600 mb-1";
+  const isGMC = project.type === "GMC";
+  const handleSave = () => {
+    if (!form.title || !form.author) {
+      setSaveError("タイトルと著者名は必須です");
+      return;
+    }
+    setSaveError("");
+    onUpdate({
+      ...form,
+      pages: parseInt(form.pages) || 0,
+      printRun: parseInt(form.printRun) || 0,
+      price: parseInt(form.price) || 0,
+      designFee: parseInt(form.designFee) || 0,
+      illustFee: parseInt(form.illustFee) || 0,
+      totalFee: parseInt(form.totalFee) || (parseInt(form.designFee) || 0) + (parseInt(form.illustFee) || 0),
+    });
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-auto" onClick={e => e.stopPropagation()}>
+        {/* ヘッダー */}
+        <div className="p-6 border-b border-gray-200 bg-gray-50 rounded-t-xl flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Badge color={isGMC ? "blue" : "indigo"}>{project.type}</Badge>
+            <h2 className="text-lg font-bold text-gray-800">案件情報の編集</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        {/* フォーム */}
+        <div className="p-6 space-y-5">
+          {/* 書籍情報 */}
+          <fieldset className="border border-gray-200 rounded-lg p-4 space-y-4">
+            <legend className="text-sm font-bold text-gray-700 px-2">書籍情報</legend>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className={labelClass}>タイトル *</label>
+                <input className={inputClass} value={form.title || ""} onChange={e => update("title", e.target.value)} />
+              </div>
+              <div className="col-span-2">
+                <label className={labelClass}>サブタイトル</label>
+                <input className={inputClass} value={form.subtitle || ""} onChange={e => update("subtitle", e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>著者名 *</label>
+                <input className={inputClass} value={form.author || ""} onChange={e => update("author", e.target.value)} />
+              </div>
+              {isGMC ? (
+                <div>
+                  <label className={labelClass}>クライアント名</label>
+                  <input className={inputClass} value={form.clientName || ""} onChange={e => update("clientName", e.target.value)} />
+                </div>
+              ) : (
+                <div>
+                  <label className={labelClass}>契約者名</label>
+                  <input className={inputClass} value={form.contractName || ""} onChange={e => update("contractName", e.target.value)} />
+                </div>
+              )}
+              <div>
+                <label className={labelClass}>ジャンル</label>
+                <select className={inputClass} value={form.genre || "その他"} onChange={e => update("genre", e.target.value)}>
+                  {GENRES.map(g => <option key={g}>{g}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>制作番号</label>
+                <input className={inputClass} value={form.productionNo || ""} onChange={e => update("productionNo", e.target.value)} />
+              </div>
+            </div>
+          </fieldset>
+          {/* 仕様 */}
+          <fieldset className="border border-gray-200 rounded-lg p-4 space-y-4">
+            <legend className="text-sm font-bold text-gray-700 px-2">仕様</legend>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>判型</label>
+                <input className={inputClass} value={form.format || ""} onChange={e => update("format", e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>ページ数</label>
+                <input type="number" className={inputClass} value={form.pages || ""} onChange={e => update("pages", e.target.value)} />
+              </div>
+              {isGMC ? (
+                <div>
+                  <label className={labelClass}>発行部数</label>
+                  <input type="number" className={inputClass} value={form.printRun || ""} onChange={e => update("printRun", e.target.value)} />
+                </div>
+              ) : (
+                <div>
+                  <label className={labelClass}>定価（円）</label>
+                  <input type="number" className={inputClass} value={form.price || ""} onChange={e => update("price", e.target.value)} />
+                </div>
+              )}
+            </div>
+            {!isGMC && (
+              <div>
+                <label className={labelClass}>文字数</label>
+                <input className={inputClass} value={form.charCount || ""} onChange={e => update("charCount", e.target.value)} />
+              </div>
+            )}
+          </fieldset>
+          {/* スケジュール */}
+          <fieldset className="border border-gray-200 rounded-lg p-4 space-y-4">
+            <legend className="text-sm font-bold text-gray-700 px-2">スケジュール</legend>
+            {isGMC ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>納期</label>
+                  <input type="date" className={inputClass} value={form.deadline || ""} onChange={e => update("deadline", e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelClass}>備考（KO/RMTG等）</label>
+                  <input className={inputClass} value={form.notes || ""} onChange={e => update("notes", e.target.value)} />
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className={labelClass}>ラフUP希望日</label>
+                  <input className={inputClass} value={form.roughUpDate || ""} onChange={e => update("roughUpDate", e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelClass}>入稿予定日</label>
+                  <input className={inputClass} value={form.submissionDate || ""} onChange={e => update("submissionDate", e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelClass}>刊行予定日</label>
+                  <input className={inputClass} value={form.deadline || ""} onChange={e => update("deadline", e.target.value)} />
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className={labelClass}>登録日</label>
+                <input type="date" className={inputClass} value={form.registeredDate || ""} onChange={e => update("registeredDate", e.target.value)} />
+              </div>
+            </div>
+          </fieldset>
+          {/* 関係者 */}
+          <fieldset className="border border-gray-200 rounded-lg p-4 space-y-4">
+            <legend className="text-sm font-bold text-gray-700 px-2">関係者</legend>
+            {isGMC ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className={labelClass}>GMC営業担当</label><input className={inputClass} value={form.salesRep || ""} onChange={e => update("salesRep", e.target.value)} /></div>
+                <div><label className={labelClass}>GMC編集窓口</label><input className={inputClass} value={form.editContact || ""} onChange={e => update("editContact", e.target.value)} /></div>
+                <div><label className={labelClass}>編集プロダクション</label><input className={inputClass} value={form.editPro || ""} onChange={e => update("editPro", e.target.value)} /></div>
+                <div><label className={labelClass}>編プロ担当者</label><input className={inputClass} value={form.editProContact || ""} onChange={e => update("editProContact", e.target.value)} /></div>
+                <div><label className={labelClass}>ライター</label><input className={inputClass} value={form.writer || ""} onChange={e => update("writer", e.target.value)} /></div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className={labelClass}>GR担当</label><input className={inputClass} value={form.grRep || ""} onChange={e => update("grRep", e.target.value)} /></div>
+                <div>
+                  <label className={labelClass}>打合せ形式</label>
+                  <select className={inputClass} value={form.meetingFormat || "オンライン"} onChange={e => update("meetingFormat", e.target.value)}>
+                    <option>オンライン</option><option>対面</option><option>電話</option>
+                  </select>
+                </div>
+                <div><label className={labelClass}>打合せ時間</label><input className={inputClass} value={form.meetingTime || ""} onChange={e => update("meetingTime", e.target.value)} /></div>
+              </div>
+            )}
+          </fieldset>
+          {/* GR費用 */}
+          {!isGMC && (
+            <fieldset className="border border-gray-200 rounded-lg p-4 space-y-4">
+              <legend className="text-sm font-bold text-gray-700 px-2">費用</legend>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className={labelClass}>デザイン費</label><input type="number" className={inputClass} value={form.designFee || ""} onChange={e => update("designFee", e.target.value)} /></div>
+                <div><label className={labelClass}>イラスト費</label><input type="number" className={inputClass} value={form.illustFee || ""} onChange={e => update("illustFee", e.target.value)} /></div>
+                <div><label className={labelClass}>依頼費合計</label><input type="number" className={inputClass} value={form.totalFee || ""} onChange={e => update("totalFee", e.target.value)} /></div>
+              </div>
+            </fieldset>
+          )}
+          {/* 内容 */}
+          <fieldset className="border border-gray-200 rounded-lg p-4 space-y-4">
+            <legend className="text-sm font-bold text-gray-700 px-2">内容</legend>
+            {isGMC && (
+              <div><label className={labelClass}>出版目的</label><textarea className={inputClass} rows={2} value={form.purpose || ""} onChange={e => update("purpose", e.target.value)} /></div>
+            )}
+            <div><label className={labelClass}>想定読者</label><input className={inputClass} value={form.targetReader || ""} onChange={e => update("targetReader", e.target.value)} /></div>
+            <div><label className={labelClass}>概要</label><textarea className={inputClass} rows={3} value={form.summary || ""} onChange={e => update("summary", e.target.value)} /></div>
+            {!isGMC && (
+              <div><label className={labelClass}>備考</label><textarea className={inputClass} rows={2} value={form.notes || ""} onChange={e => update("notes", e.target.value)} /></div>
+            )}
+          </fieldset>
+          {saveError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{saveError}</div>
+          )}
+          {/* ボタン */}
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">
+              キャンセル
+            </button>
+            <button type="button" onClick={handleSave}
+              className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium text-white transition-colors ${isGMC ? "bg-blue-600 hover:bg-blue-700" : "bg-indigo-600 hover:bg-indigo-700"}`}>
+              変更を保存
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1353,12 +1579,16 @@ export default function App() {
   const [staff, setStaff] = useState(INITIAL_STAFF);
   const [projects, setProjects] = useState(SAMPLE_PROJECTS);
   const [selectedProject, setSelectedProject] = useState(null);
+  const [editingProject, setEditingProject] = useState(null);
   const handleAssign = (projectId, staffId) => {
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assignedTo: staffId, status: "担当決定済" } : p));
   };
   const handleRegister = (newProject) => {
     setProjects(prev => [...prev, { ...newProject, id: Date.now() }]);
     setTab("projects");
+  };
+  const handleUpdate = (updatedProject) => {
+    setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
   };
   const tabs = [
     { id: "dashboard", label: "ダッシュボード" },
@@ -1399,7 +1629,7 @@ export default function App() {
       </nav>
       <main className="max-w-7xl mx-auto px-4 py-6">
         {tab === "dashboard" && <DashboardTab projects={projects} staff={staff} />}
-        {tab === "projects" && <ProjectListTab projects={projects} staff={staff} onSelectProject={setSelectedProject} />}
+        {tab === "projects" && <ProjectListTab projects={projects} staff={staff} onSelectProject={setSelectedProject} onEditProject={setEditingProject} />}
         {tab === "monthly" && <MonthlyTab projects={projects} staff={staff} />}
         {tab === "register" && <RegisterTab onRegister={handleRegister} />}
         {tab === "staff" && <StaffTab staff={staff} setStaff={setStaff} projects={projects} />}
@@ -1411,6 +1641,13 @@ export default function App() {
           projects={projects}
           onAssign={handleAssign}
           onClose={() => setSelectedProject(null)}
+        />
+      )}
+      {editingProject && (
+        <EditProjectModal
+          project={editingProject}
+          onUpdate={handleUpdate}
+          onClose={() => setEditingProject(null)}
         />
       )}
     </div>
