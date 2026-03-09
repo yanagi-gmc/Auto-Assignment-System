@@ -258,50 +258,126 @@ function CSVImportModal({ staff, onImport, onClose }) {
 
   const parse = () => {
     if (!csvText.trim()) { setParseError("データを貼り付けてください"); return; }
-    const lines = csvText.trim().split("\n").filter(l => l.trim());
-    if (lines.length < 2) { setParseError("ヘッダー行とデータ行が必要です（2行以上）"); return; }
-    const sep = lines[0].includes("\t") ? "\t" : ",";
-    const headers = lines[0].split(sep).map(h => h.trim().replace(/[\r"]/g, ""));
-    const rows = lines.slice(1).map((line, idx) => {
-      const vals = line.split(sep).map(v => v.trim().replace(/[\r"]/g, ""));
+
+    // RFC 4180準拠CSVパーサー（ヘッダー内改行・クォートフィールド対応）
+    const parseCSVRows = (text) => {
+      const firstLine = text.slice(0, Math.max(text.indexOf('\n'), 1));
+      const sep = firstLine.includes('\t') ? '\t' : ',';
+      const rows = []; let row = []; let cell = ''; let inQ = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') {
+          if (inQ && text[i+1] === '"') { cell += '"'; i++; }
+          else inQ = !inQ;
+        } else if (c === sep && !inQ) { row.push(cell); cell = ''; }
+        else if (c === '\r') { /* skip */ }
+        else if (c === '\n' && !inQ) {
+          row.push(cell); cell = '';
+          if (row.some(v => v !== '')) { rows.push(row); }
+          row = [];
+        } else { cell += c; }
+      }
+      if (cell || row.length) { row.push(cell); if (row.some(v => v !== '')) rows.push(row); }
+      return rows;
+    };
+
+    const allRows = parseCSVRows(csvText.trim());
+    if (allRows.length < 2) { setParseError("ヘッダー行とデータ行が必要です"); return; }
+
+    // ヘッダー正規化（改行・カッコ・スペースを除去してマッチしやすくする）
+    const rawHeaders = allRows[0].map(h => h.replace(/[\n\r]/g, '').trim());
+    const normH = (h) => h.replace(/[（）()【】\s　\n＊*・]/g, '');
+
+    // 列インデックス検索（柔軟マッチング）
+    const findIdx = (...keys) => {
+      for (const k of keys) {
+        const kn = normH(k);
+        const i = rawHeaders.findIndex(h => {
+          const hn = normH(h);
+          return hn === kn || hn.includes(kn) || kn.includes(hn);
+        });
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+
+    // 日付正規化: 26/06/30 → 2026-06-30 / 2026/06/30 → 2026-06-30
+    const normDate = (d) => {
+      if (!d) return '';
+      const m2 = d.match(/^(\d{2})\/(\d{1,2})\/(\d{1,2})$/);
+      if (m2) return `20${m2[1]}-${m2[2].padStart(2,'0')}-${m2[3].padStart(2,'0')}`;
+      const m4 = d.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+      if (m4) return `${m4[1]}-${m4[2].padStart(2,'0')}-${m4[3].padStart(2,'0')}`;
+      return d;
+    };
+
+    const SKIP = new Set(['なし', '未決定', '-', '']);
+
+    const rows = allRows.slice(1).map((vals, idx) => {
       const get = (...keys) => {
         for (const k of keys) {
-          const i = headers.findIndex(h => h === k);
-          if (i >= 0 && vals[i]) return vals[i];
+          const i = findIdx(k);
+          if (i >= 0 && vals[i] && !SKIP.has(vals[i].trim())) return vals[i].trim();
         }
-        return "";
+        return '';
       };
-      const typeName = get("種別", "type");
-      const type = typeName === "GR" ? "GR" : "GMC";
-      const title = get("タイトル", "書名");
-      const author = get("著者名", "著者");
-      const staffName = get("担当者", "担当者名", "デザイン担当", "D担当", "担当");
-      const staffObj = staffName ? staff.find(s => s.name === staffName || s.name.includes(staffName) || staffName.includes(s.name)) : null;
-      const status = staffObj ? "担当決定済" : "未割当";
-      const deadline = get("納期", "刊行予定日", "刊行日");
-      const genre = get("ジャンル") || (type === "GMC" ? "ビジネス" : "その他");
-      const pages = parseInt(get("ページ数", "頁数", "ページ")) || 0;
-      const registeredDate = get("登録日") || new Date().toISOString().slice(0, 10);
+
+      // 種別: 1列目ヘッダーが空の場合はvals[0]を使用
+      const typeIdx = rawHeaders[0] === '' ? 0 : findIdx('種別', 'type');
+      const typeName = typeIdx >= 0 ? (vals[typeIdx] || '').trim() : '';
+      const type = typeName === 'GR' ? 'GR' : (typeName === 'GMC' ? 'GMC' : null);
+      if (!type) return null; // 種別不明行はスキップ
+
+      const title = get('タイトル', '書名');
+      // クライアント名 = 著者として扱う（GMC/GR共通）
+      const author = get('クライアント名', 'クライアント', '著者名', '著者');
+
+      // デザイン担当（ディレクター）→ 担当者として使用
+      const staffName = get('デザイン担当ディレクター', 'デザイン担当', 'D担当', '担当者', '担当者名', '担当');
+      const staffObj = staffName ? staff.find(s =>
+        s.name === staffName || s.name.includes(staffName) || staffName.includes(s.name)
+      ) : null;
+      const status = staffObj ? '担当決定済' : '未割当';
+
+      const deadline = normDate(get('刊行日', '納期', '刊行予定日'));
+      const regRaw = get('カバー発注日', '登録日');
+      const registeredDate = regRaw ? (normDate(regRaw) || regRaw) : new Date().toISOString().slice(0, 10);
+      const genre = get('ジャンル') || (type === 'GMC' ? 'ビジネス' : 'その他');
+      const pages = parseInt(get('ページ数', '頁数')) || 0;
+      const productionNo = get('制作No', '制作番号');
+      const editStaff = get('編集担当', 'GR担当', 'GMC編集窓口');
+
+      // エキスパート・詳細・素材費 → 備考に追記
+      const expertIdx = findIdx('デザイン担当エキスパート', 'エキスパート');
+      const expertName = expertIdx >= 0 && vals[expertIdx] && !SKIP.has(vals[expertIdx].trim()) ? vals[expertIdx].trim() : '';
+      const detail = get('詳細', '素材費');
+      const notesArr = [];
+      if (expertName) notesArr.push(`E担当: ${expertName}`);
+      if (detail) notesArr.push(detail);
+
       return {
         _rowNum: idx + 2, _valid: !!(title && author),
         _staffName: staffName, _staffFound: !!staffObj,
         id: Date.now() + idx * 1000 + Math.floor(Math.random() * 999),
-        type, title, author, genre, deadline, pages, status,
+        type, title, author, clientName: type === 'GMC' ? author : '',
+        genre, deadline, pages, status,
         assignedTo: staffObj ? staffObj.id : null,
-        registeredDate, subtitle: get("サブタイトル") || "",
-        clientName: get("クライアント名", "クライアント") || "",
-        productionNo: get("制作番号") || "",
-        grRep: get("GR担当", "GR") || "",
-        salesRep: get("GMC営業担当", "営業担当") || "",
-        editContact: get("GMC編集窓口", "編集窓口") || "",
-        printRun: parseInt(get("発行部数")) || 0,
-        price: parseInt(get("定価")) || 0,
-        summary: get("概要") || "", notes: get("備考") || "",
-        pdfFile: "", format: get("判型") || (type === "GMC" ? "四六判単行本" : "四六判並製"),
+        registeredDate, subtitle: get('サブタイトル') || '',
+        productionNo,
+        grRep: type === 'GR' ? editStaff : '',
+        editContact: type === 'GMC' ? editStaff : '',
+        salesRep: get('GMC営業担当', '営業担当') || '',
+        printRun: parseInt(get('発行部数')) || 0,
+        price: parseInt(get('定価')) || 0,
+        summary: get('概要') || '',
+        notes: notesArr.join(' / '),
+        pdfFile: '',
+        format: get('分類判型', '判型') || (type === 'GMC' ? '四六判単行本' : '四六判並製'),
       };
-    });
+    }).filter(Boolean);
+
     if (rows.length === 0) { setParseError("データが見つかりませんでした"); return; }
-    setParseError(""); setPreview(rows); setStep("preview");
+    setParseError(''); setPreview(rows); setStep('preview');
   };
 
   const validRows = preview.filter(r => r._valid);
@@ -326,23 +402,23 @@ function CSVImportModal({ staff, onImport, onClose }) {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-2">
                 <p className="font-semibold">📋 使い方</p>
                 <p>ExcelやGoogleスプレッドシートのデータを<strong>全体コピー</strong>して下の欄に貼り付けてください。</p>
-                <p className="font-medium mt-2">対応している列名（1行目をヘッダーにしてください）：</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1 mt-1 text-xs bg-white rounded p-3 border border-blue-100">
+                <p className="font-medium mt-2">D局進行管理シートの列名はそのまま対応しています：</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-1 text-xs bg-white rounded p-3 border border-blue-100">
                   {[
-                    ["種別 *", "GMC または GR"],
-                    ["タイトル *", "書名（必須）"],
-                    ["著者名 *", "著者（必須）"],
-                    ["担当者", "スタッフ名（一致で自動紐付け）"],
-                    ["ジャンル", "省略時: GMC=ビジネス, GR=その他"],
-                    ["納期", "刊行予定日も可"],
-                    ["ページ数", "頁数も可"],
-                    ["クライアント名", "GMC用"],
-                    ["制作番号", "GR用"],
-                    ["GR担当", "GR担当者名"],
-                    ["登録日", "省略時は今日の日付"],
-                    ["概要 / 備考", "メモ"],
+                    ["1列目（GMC/GR）", "→ 種別"],
+                    ["制作No", "→ 制作番号"],
+                    ["刊行日", "→ 納期（26/06/30形式も自動変換）"],
+                    ["クライアント名", "→ 著者名（クライアント名=著者）"],
+                    ["タイトル", "→ タイトル（必須）"],
+                    ["分類（判型）", "→ 判型"],
+                    ["編集担当", "→ GMCは編集窓口、GRはGR担当"],
+                    ["デザイン担当（ディレクター）", "→ 担当者（自動マッチング）"],
+                    ["デザイン担当（エキスパート）", "→ 備考に記録"],
+                    ["カバー発注日", "→ 登録日"],
+                    ["詳細 / 素材費", "→ 備考に記録"],
+                    ["未決定 / なし", "→ 未割当として登録"],
                   ].map(([k, v]) => (
-                    <div key={k}><span className="font-medium">{k}</span><span className="text-blue-600 ml-1">= {v}</span></div>
+                    <div key={k} className="flex gap-1"><span className="font-medium text-gray-700">{k}</span><span className="text-blue-600">{v}</span></div>
                   ))}
                 </div>
               </div>
