@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useRef } from "react";
+import * as pdfjsLib from "pdfjs-dist";
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).href;
 // =============================================
 // 案件担当 割振りシステム（GMC / GR 対応版）
 // =============================================
@@ -509,6 +511,58 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onClose }) {
   );
 }
 // =====================
+// PDF テキスト抽出・GRフィールド解析
+// =====================
+async function extractTextFromPDF(file) {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    let lastY = null;
+    let line = "";
+    for (const item of content.items) {
+      const y = Math.round(item.transform[5]);
+      if (lastY !== null && Math.abs(y - lastY) > 2) {
+        fullText += line + "\n";
+        line = item.str;
+      } else {
+        line += item.str;
+      }
+      lastY = y;
+    }
+    if (line) fullText += line + "\n";
+  }
+  return fullText;
+}
+function parseGRFields(text) {
+  const get = (pattern) => { const m = text.match(pattern); return m ? m[1].trim() : ""; };
+  const getNum = (pattern) => { const m = text.match(pattern); return m ? parseInt(m[1].replace(/,/g, ""), 10) : ""; };
+  const grRep = get(/担当[：:]\s*(.+)/m);
+  const contractName = get(/契約者名[：:]\s*(.+)/m);
+  const authorRaw = get(/著者名[：:]\s*(.+)/m);
+  const titleRaw = get(/タイトル[：:]\s*(.+)/m);
+  let title = titleRaw, subtitle = "";
+  const sepMatch = titleRaw.match(/^(.+?)\s*[　 ](～.+)$/) || titleRaw.match(/^(.+?)(～.+)$/);
+  if (sepMatch) { title = sepMatch[1].trim(); subtitle = sepMatch[2].trim(); }
+  const roughUpDate = get(/ラフUP希望日[：:]\s*(.+)/m);
+  const submissionDate = get(/入稿予定日[：:]\s*(.+)/m);
+  const deadline = get(/刊行予定日[：:]\s*(.+)/m);
+  const price = getNum(/定価[：:]\s*([\d,]+)円/m);
+  const format = get(/判型[（(]組み方[）)][：:]\s*(.+)/m);
+  const productionNo = get(/制作番号[：:]\s*(\d+)/m);
+  const totalFee = getNum(/依頼費[：:]\s*([\d,]+)円/m);
+  const designFee = getNum(/デザイン費[\s　]*([\d,]+)円/m);
+  const illustFee = getNum(/イラスト費[\s　]*([\d,]+)円/m);
+  return {
+    grRep, contractName, author: authorRaw, title, subtitle,
+    roughUpDate, submissionDate, deadline,
+    price: price || "", format,
+    productionNo, totalFee: totalFee || "", designFee: designFee || "", illustFee: illustFee || "",
+  };
+}
+// =====================
 // 新規案件登録 タブ
 // =====================
 function RegisterTab({ onRegister }) {
@@ -533,7 +587,32 @@ function RegisterTab({ onRegister }) {
   const form = projectType === "GMC" ? gmcForm : grForm;
   const setForm = projectType === "GMC" ? setGmcForm : setGrForm;
   const [submitError, setSubmitError] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseMsg, setParseMsg] = useState("");
   const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+  const handlePDFFile = async (file) => {
+    const objectUrl = URL.createObjectURL(file);
+    update("pdfFile", file.name);
+    update("pdfData", objectUrl);
+    if (projectType !== "GR") return;
+    setIsParsing(true);
+    setParseMsg("");
+    try {
+      const text = await extractTextFromPDF(file);
+      const fields = parseGRFields(text);
+      const count = Object.values(fields).filter(v => v !== "" && v !== 0).length;
+      if (count > 0) {
+        setGrForm(prev => ({ ...prev, ...fields, pdfFile: file.name, pdfData: objectUrl }));
+        setParseMsg(`success:${count}`);
+      } else {
+        setParseMsg("nodata");
+      }
+    } catch {
+      setParseMsg("error");
+    } finally {
+      setIsParsing(false);
+    }
+  };
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.title || !form.author) {
@@ -736,10 +815,7 @@ function RegisterTab({ onRegister }) {
               e.preventDefault();
               e.currentTarget.classList.remove("border-indigo-500", "bg-indigo-50");
               const file = e.dataTransfer.files[0];
-              if (file && file.type === "application/pdf") {
-                update("pdfFile", file.name);
-                update("pdfData", URL.createObjectURL(file));
-              }
+              if (file && file.type === "application/pdf") handlePDFFile(file);
             }}
           >
             <input
@@ -749,20 +825,34 @@ function RegisterTab({ onRegister }) {
               className="hidden"
               onChange={e => {
                 const file = e.target.files[0];
-                if (file) {
-                  update("pdfFile", file.name);
-                  update("pdfData", URL.createObjectURL(file));
-                }
+                if (file) handlePDFFile(file);
                 e.target.value = "";
               }}
             />
-            {form.pdfFile ? (
+            {isParsing ? (
+              <div>
+                <svg className="mx-auto h-10 w-10 text-indigo-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                <p className="mt-2 text-sm text-indigo-600">PDFを解析中...</p>
+              </div>
+            ) : form.pdfFile ? (
               <div>
                 <svg className="mx-auto h-10 w-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <p className="mt-2 text-sm font-medium text-green-700">{form.pdfFile}</p>
-                <button type="button" onClick={e => { e.stopPropagation(); update("pdfFile", ""); update("pdfData", ""); }}
+                {parseMsg.startsWith("success") && (
+                  <p className="mt-1 text-xs text-indigo-600 font-medium">✓ PDFから{parseMsg.split(":")[1]}項目を自動入力しました</p>
+                )}
+                {parseMsg === "nodata" && (
+                  <p className="mt-1 text-xs text-amber-600">発注情報が見つかりませんでした。手動で入力してください。</p>
+                )}
+                {parseMsg === "error" && (
+                  <p className="mt-1 text-xs text-red-500">PDF解析に失敗しました。手動で入力してください。</p>
+                )}
+                <button type="button" onClick={e => { e.stopPropagation(); update("pdfFile", ""); update("pdfData", ""); setParseMsg(""); }}
                   className="mt-2 text-xs text-red-500 hover:text-red-700 underline">ファイルを削除</button>
               </div>
             ) : (
@@ -771,7 +861,7 @@ function RegisterTab({ onRegister }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <p className="mt-2 text-sm text-gray-500">
-                  {projectType === "GMC" ? "企画書PDFをアップロード" : "カバー発注依頼メールPDFをアップロード"}
+                  {projectType === "GMC" ? "企画書PDFをアップロード" : "カバー発注依頼メールPDFをアップロード（GRは自動入力対応）"}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">クリックまたはドラッグ&ドロップ</p>
               </div>
