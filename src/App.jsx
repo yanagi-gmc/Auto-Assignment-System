@@ -515,77 +515,115 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onClose }) {
 // =====================
 async function extractTextFromPDF(file) {
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  // cMapUrl が必要: 日本語CIDフォントをUnicodeに正しくデコードするため
+  const cMapUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/cmaps/`;
+  const pdf = await pdfjsLib.getDocument({ data: buffer, cMapUrl, cMapPacked: true }).promise;
   let fullText = "";
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    // Sort items: y descending (top of page first), then x ascending (left to right)
     const items = content.items
-      .filter(item => item.str)
+      .filter(item => item.str && item.str.trim())
       .map(item => ({ x: item.transform[4], y: item.transform[5], str: item.str }))
       .sort((a, b) => Math.abs(b.y - a.y) > 1 ? b.y - a.y : a.x - b.x);
-    // Group into lines with 8pt y-tolerance
     let lineY = null;
     let line = "";
     for (const item of items) {
       if (lineY === null || Math.abs(item.y - lineY) > 8) {
-        if (line) fullText += line + "\n";
+        if (line.trim()) fullText += line.trim() + "\n";
         line = item.str;
         lineY = item.y;
       } else {
         line += item.str;
       }
     }
-    if (line) fullText += line + "\n";
+    if (line.trim()) fullText += line.trim() + "\n";
   }
   return fullText;
 }
 function parseGRFields(text, filename = "") {
-  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const get = (pattern) => { const m = text.match(pattern); return m ? m[1].trim() : ""; };
+  const getNum = (pattern) => { const m = text.match(pattern); return m ? parseInt(m[1].replace(/,/g, ""), 10) : ""; };
 
-  // === 1. Parse filename (most reliable source since Japanese labels are unreadable in PDF) ===
-  // e.g. 【カバー発注依頼】岩田彰人様 「通信制高校は人生はじまり」（25457）＿GR田口.pdf
-  let grRep = "", author = "", title = "", subtitle = "", productionNo = "";
+  // === 1. ラベルベース抽出 (CMap有効時に日本語テキストが正しく読める) ===
+  const grRep = get(/担当\s*[：:]\s*(.+)/m);
+  const contractName = get(/契約者名\s*[：:]\s*(.+)/m);
+  const authorRaw = get(/著者名\s*[：:]\s*(.+)/m);
+  const titleRaw = get(/タイトル\s*[：:]\s*(.+)/m);
+  let title = titleRaw, subtitle = "";
+  if (titleRaw) {
+    // 「メインタイトル　～サブタイトル～(仮)」の形式を分離
+    const sepMatch = titleRaw.match(/^(.+?)[　\s]+(～.+)$/) || titleRaw.match(/^(.+?)(～.+)$/);
+    if (sepMatch) { title = sepMatch[1].trim(); subtitle = sepMatch[2].trim(); }
+  }
+  const roughUpDate = get(/ラフ\s*UP\s*希望日\s*[：:]\s*(.+)/m);
+  const submissionDate = get(/入稿予定日\s*[：:]\s*(.+)/m);
+  const deadline = get(/刊行予定日\s*[：:]\s*(.+)/m);
+  const price = getNum(/定価\s*[：:]\s*([\d,]+)円/m);
+  const format = get(/判型[（(]組み方[）)]\s*[：:]\s*(.+)/m);
+  const productionNo = get(/制作番号\s*[：:]\s*(\d+)/m);
+  const totalFee = getNum(/依頼費\s*[：:]\s*([\d,]+)円/m);
+  const designFee = getNum(/デザイン費[　\s]*([\d,]+)円/m);
+  const illustFee = getNum(/イラスト費[　\s]*([\d,]+)円/m);
+  // 【書籍内容】セクションを概要として取得
+  const summaryMatch = text.match(/【書籍内容】[^\n]*\n([^\n]+)/);
+  const summary = summaryMatch ? summaryMatch[1].trim() : "";
+
+  // === 2. ファイル名フォールバック (ラベル抽出が失敗した場合) ===
+  let fnTitle = "", fnSubtitle = "", fnAuthor = "", fnProductionNo = "", fnGrRep = "";
   const fnm = filename.replace(/\.pdf$/i, "");
   const fnMatch = fnm.match(/【カバー発注依頼】(.+?)様[\s　]*[「『](.+?)[」』][（(](\d+)[）)].*?GR(.+)$/);
   if (fnMatch) {
-    author = fnMatch[1].trim();
+    fnAuthor = fnMatch[1].trim();
     const rawTitle = fnMatch[2].trim();
     const subMatch = rawTitle.match(/^(.+?)\s*(～.+)$/);
-    if (subMatch) { title = subMatch[1].trim(); subtitle = subMatch[2].trim(); }
-    else title = rawTitle;
-    productionNo = fnMatch[3];
-    grRep = "GR" + fnMatch[4].trim();
+    if (subMatch) { fnTitle = subMatch[1].trim(); fnSubtitle = subMatch[2].trim(); }
+    else fnTitle = rawTitle;
+    fnProductionNo = fnMatch[3];
+    fnGrRep = "GR" + fnMatch[4].trim();
   }
 
-  // === 2. Parse dates from text (form dates: 2026/6 or 2026/6/30, not email dates like "2026 3 5") ===
-  const formDates = lines.filter(l => /^20\d\d\/\d{1,2}(\/\d{1,2})?$/.test(l));
-  const roughUpDate = formDates[0] || "";
-  const submissionDate = formDates[1] || "";
-  const deadline = formDates[2] || "";
-
-  // === 3. Parse price (定価): small amount like 1,600 ===
-  const priceLine = lines.find(l => /^\d,\d{3}$/.test(l));
-  const price = priceLine ? parseInt(priceLine.replace(/,/g, ""), 10) : "";
-
-  // === 4. Parse fees (依頼費, デザイン費, イラスト費): large amounts like 180,000 ===
-  const feeAmounts = [];
-  for (const line of lines) {
-    for (const m of line.matchAll(/(\d{2,3},\d{3})/g)) {
-      const n = parseInt(m[1].replace(/,/g, ""), 10);
-      if (n >= 10000) feeAmounts.push(n);
+  // === 3. 数値ポジショナルフォールバック (ラベル抽出が失敗した場合) ===
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  let posPrice = price, posTotalFee = totalFee, posDesignFee = designFee, posIllustFee = illustFee;
+  let posRoughUp = roughUpDate, posSubmission = submissionDate, posDeadline = deadline;
+  if (!price) {
+    const pl = lines.find(l => /^\d,\d{3}$/.test(l));
+    posPrice = pl ? parseInt(pl.replace(/,/g, ""), 10) : "";
+  }
+  if (!totalFee) {
+    const fa = [];
+    for (const line of lines) {
+      for (const m of line.matchAll(/(\d{2,3},\d{3})/g)) {
+        const n = parseInt(m[1].replace(/,/g, ""), 10);
+        if (n >= 10000) fa.push(n);
+      }
     }
+    [posTotalFee, posDesignFee, posIllustFee] = [fa[0] || "", fa[1] || "", fa[2] || ""];
+  }
+  if (!submissionDate && !deadline) {
+    const fd = lines.filter(l => /^20\d\d\/\d{1,2}(\/\d{1,2})?$/.test(l));
+    if (fd.length >= 3) { posRoughUp = fd[0]; posSubmission = fd[1]; posDeadline = fd[2]; }
+    else if (fd.length === 2) { posSubmission = fd[0]; posDeadline = fd[1]; }
+    else if (fd.length === 1) { posDeadline = fd[0]; }
   }
 
   return {
-    grRep, contractName: "", author, title, subtitle,
-    roughUpDate, submissionDate, deadline,
-    price: price || "",
-    productionNo,
-    totalFee: feeAmounts[0] || "",
-    designFee: feeAmounts[1] || "",
-    illustFee: feeAmounts[2] || "",
+    grRep: grRep || fnGrRep,
+    contractName: contractName || "",
+    author: authorRaw || fnAuthor,
+    title: title || fnTitle,
+    subtitle: subtitle || fnSubtitle,
+    roughUpDate: posRoughUp,
+    submissionDate: posSubmission,
+    deadline: posDeadline,
+    price: posPrice || "",
+    format: format || "",
+    productionNo: productionNo || fnProductionNo,
+    totalFee: posTotalFee || "",
+    designFee: posDesignFee || "",
+    illustFee: posIllustFee || "",
+    summary,
   };
 }
 // =====================
