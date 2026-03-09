@@ -971,7 +971,11 @@ function RegisterTab({ onRegister, onOpenCSVImport }) {
   const [submitError, setSubmitError] = useState("");
   const [isParsing, setIsParsing] = useState(false);
   const [parseMsg, setParseMsg] = useState("");
-  const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+  const update = (key, val) => setForm(prev => {
+    const next = { ...prev, [key]: val };
+    if (projectType === "GMC" && key === "author") next.clientName = val;
+    return next;
+  });
   const handlePDFFile = async (file) => {
     const objectUrl = URL.createObjectURL(file);
     update("pdfFile", file.name);
@@ -990,7 +994,7 @@ function RegisterTab({ onRegister, onOpenCSVImport }) {
         if (projectType === "GR") {
           setGrForm(prev => ({ ...prev, ...fields, pdfFile: file.name, pdfData: objectUrl }));
         } else {
-          setGmcForm(prev => ({ ...prev, ...fields, pdfFile: file.name, pdfData: objectUrl }));
+          setGmcForm(prev => ({ ...prev, ...fields, clientName: fields.author || fields.clientName || "", pdfFile: file.name, pdfData: objectUrl }));
         }
         setParseMsg(`success:${count}`);
       } else {
@@ -1291,10 +1295,14 @@ function RegisterTab({ onRegister, onOpenCSVImport }) {
 function EditProjectModal({ project, onUpdate, onClose }) {
   const [form, setForm] = useState({ ...project });
   const [saveError, setSaveError] = useState("");
-  const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+  const isGMC = project.type === "GMC";
+  const update = (key, val) => setForm(prev => {
+    const next = { ...prev, [key]: val };
+    if (isGMC && key === "author") next.clientName = val;
+    return next;
+  });
   const inputClass = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
   const labelClass = "block text-xs font-medium text-gray-600 mb-1";
-  const isGMC = project.type === "GMC";
   const handleSave = () => {
     if (!form.title || !form.author) {
       setSaveError("タイトルと著者名は必須です");
