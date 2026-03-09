@@ -627,6 +627,110 @@ function parseGRFields(text, filename = "") {
   };
 }
 // =====================
+// TSO企画書（GMC）フィールド解析
+// =====================
+function parseTSOFields(text, filename = "") {
+  const get = (pattern) => { const m = text.match(pattern); return m ? m[1].trim() : ""; };
+
+  // === タイトル・サブタイトル ===
+  // 形式A: 【タイトル】\n（メインタイトル）\n[タイトル]
+  // 形式B: 【タイトル案】\n〈サブタイトル〉\n...\n〈メインタイトル〉\n[タイトル]
+  let title = "", subtitle = "";
+  const titleMainMatch = text.match(/【タイトル[案]?】[\s\S]*?(?:（メインタイトル）|〈メインタイトル〉)\s*\n([^\n〈（【]+)/);
+  if (titleMainMatch) title = titleMainMatch[1].trim();
+  const subtitleMatch = text.match(/〈サブタイトル〉\s*\n([^\n〈（【]+)/);
+  if (subtitleMatch) subtitle = subtitleMatch[1].trim();
+  if (!subtitle) {
+    const sub2 = text.match(/【タイトル[案]?】[\s\S]*?（サブタイトル）\s*\n([^\n〈（【]+)/);
+    if (sub2) subtitle = sub2[1].trim();
+  }
+
+  // === 著者名 ===
+  // 形式A: 【著者名】\n[著者名] 様  /  形式B: 【著者】\n[著者名]（読み）様
+  const authorLine = get(/【著者名?】\s*\n([^\n]+)/);
+  const author = authorLine.replace(/様\s*$/, "").trim();
+
+  // === クライアント名 ===
+  // 形式A: ・案件名 [クライアント名]  /  形式B: ヘッダー「[クライアント名]様／」
+  const clientName = get(/・案件名\s+(.+)/m) || get(/^(.+?)様[／/]/m);
+
+  // === 納期 ===
+  // 形式A: ・納期／YYYY 年 M 月 DD 日  /  形式B: ヘッダー末尾「YYYY 年 M 月末日納品」
+  const deadline = get(/・?納期[／/]\s*(.+)/m) ||
+    get(/(\d{4}\s*年\s*\d+\s*月(?:末日|上旬|中旬|下旬|\d+日)?)\s*納品/m);
+
+  // === ページ数 ===
+  const pagesMatch = text.match(/(\d{2,3})\s*ページ/);
+  const pages = pagesMatch ? parseInt(pagesMatch[1], 10) : "";
+
+  // === 判型 ===
+  // 形式A: 【書籍の仕様】\n新書、...  /  形式B: ヘッダー「様／[判型]／TSO」
+  const format = get(/【書籍の仕様】\s*\n([^、\n]+)/) ||
+    get(/様[／/]([^／\n]+)[／/]TSO/m);
+
+  // === 発行部数 ===
+  const printRunMatch = text.match(/・発行部数[^0-9]*([\d,]+)\s*部/);
+  const printRun = printRunMatch ? parseInt(printRunMatch[1].replace(/,/g, ""), 10) : "";
+
+  // === GMC 営業担当 ===
+  // 形式A: ・GMC 営業担当 [名前]  /  形式B: ヘッダー「営業担当：[名前]」
+  const salesRep = get(/・GMC\s*営業担当\s+(.+)/m) ||
+    get(/営業担当[：:]\s*(.+?)(?:[／/]|$)/m);
+
+  // === GMC 編集窓口 ===
+  // 形式A: ・GMC 編集窓口 [名前]  /  形式B: ヘッダー「編集担当：[名前]」
+  const editContact = get(/・GMC\s*編集窓口\s+(.+)/m) ||
+    get(/編集担当[：:]\s*(.+?)(?:[／/]|$)/m);
+
+  // === 編集プロダクション ===
+  const editPro = get(/・編集プロダクション名\s+(.+)/m);
+
+  // === 編プロ担当 ===
+  const editProContact = get(/・編プロ[／/]編集担当者\s+(.+)/m);
+
+  // === ライター ===
+  // 形式A: ・編プロ／ライティング担当  /  形式B: スタッフエディター
+  const writer = get(/・編プロ[／/]ライティング担当\s+(.+)/m) ||
+    get(/スタッフエディター[：:]\s*(.+?)(?:[／/]|$)/m);
+
+  // === 出版目的 ===
+  const purposeMatch = text.match(/【(?:クライアントの出版目的|書籍のゴール)】\s*\n([^\n]+)/);
+  const purpose = purposeMatch ? purposeMatch[1].trim() : "";
+
+  // === 想定読者 ===
+  const targetMatch = text.match(/【(?:想定読者|読者ターゲット)】\s*\n([\s\S]+?)(?=\n【)/);
+  const targetReader = targetMatch
+    ? targetMatch[1].replace(/\n/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) : "";
+
+  // === 企画概要 ===
+  const summaryMatch = text.match(/【企画[主趣]旨】\s*\n([\s\S]+?)(?=\n【)/);
+  const summary = summaryMatch
+    ? summaryMatch[1].replace(/\n/g, " ").replace(/\s+/g, " ").trim().slice(0, 400) : "";
+
+  // === ファイル名から制作番号・クライアント名・判型のフォールバック ===
+  // 例: 【わざクリニック様】大江:轟（新書）..._(1)_155968_0218.pdf
+  let fnProductionNo = "", fnClientName = "", fnFormat = "";
+  const fnm = filename.replace(/\.pdf$/i, "");
+  const fnProdMatch = fnm.match(/_(\d{5,6})_\d{4}$/);
+  if (fnProdMatch) fnProductionNo = fnProdMatch[1];
+  const fnClientMatch = fnm.match(/【(.+?)様】/);
+  if (fnClientMatch) fnClientName = fnClientMatch[1];
+  const fnFormatMatch = fnm.match(/（(新書|単行本[^）]*)）/);
+  if (fnFormatMatch) fnFormat = fnFormatMatch[1];
+
+  return {
+    title, subtitle, author,
+    clientName: clientName || fnClientName,
+    deadline, pages: pages || "",
+    format: format || fnFormat,
+    printRun: printRun || "",
+    salesRep: salesRep || "", editContact: editContact || "",
+    editPro: editPro || "", editProContact: editProContact || "", writer: writer || "",
+    purpose: purpose || "", targetReader: targetReader || "", summary: summary || "",
+    productionNo: fnProductionNo,
+  };
+}
+// =====================
 // 新規案件登録 タブ
 // =====================
 function RegisterTab({ onRegister }) {
@@ -637,6 +741,7 @@ function RegisterTab({ onRegister }) {
     deadline: "", pages: "", format: "四六判単行本", printRun: "",
     salesRep: "", editContact: "", editPro: "", editProContact: "", writer: "",
     purpose: "", targetReader: "", summary: "", notes: "", pdfFile: "",
+    productionNo: "",
   };
   const emptyGR = {
     title: "", subtitle: "", author: "", contractName: "", genre: "その他",
@@ -658,22 +763,28 @@ function RegisterTab({ onRegister }) {
     const objectUrl = URL.createObjectURL(file);
     update("pdfFile", file.name);
     update("pdfData", objectUrl);
-    if (projectType !== "GR") return;
     setIsParsing(true);
     setParseMsg("");
     try {
       const text = await extractTextFromPDF(file);
-      console.log("[PDF extracted text]", text.slice(0, 2000));
-      const fields = parseGRFields(text, file.name);
+      console.log("[PDF extracted text]", text.slice(0, 3000));
+      const fields = projectType === "GR"
+        ? parseGRFields(text, file.name)
+        : parseTSOFields(text, file.name);
       console.log("[PDF parsed fields]", fields);
       const count = Object.values(fields).filter(v => v !== "" && v !== 0).length;
       if (count > 0) {
-        setGrForm(prev => ({ ...prev, ...fields, pdfFile: file.name, pdfData: objectUrl }));
+        if (projectType === "GR") {
+          setGrForm(prev => ({ ...prev, ...fields, pdfFile: file.name, pdfData: objectUrl }));
+        } else {
+          setGmcForm(prev => ({ ...prev, ...fields, pdfFile: file.name, pdfData: objectUrl }));
+        }
         setParseMsg(`success:${count}`);
       } else {
         setParseMsg("nodata");
       }
-    } catch {
+    } catch (e) {
+      console.error("[PDF parse error]", e);
       setParseMsg("error");
     } finally {
       setIsParsing(false);
@@ -751,12 +862,10 @@ function RegisterTab({ onRegister }) {
                   {GENRES.map(g => <option key={g}>{g}</option>)}
                 </select>
               </div>
-              {projectType === "GR" && (
-                <div>
-                  <label className={labelClass}>制作番号</label>
-                  <input className={inputClass} value={form.productionNo || ""} onChange={e => update("productionNo", e.target.value)} placeholder="25396" />
-                </div>
-              )}
+              <div>
+                <label className={labelClass}>制作番号</label>
+                <input className={inputClass} value={form.productionNo || ""} onChange={e => update("productionNo", e.target.value)} placeholder={projectType === "GR" ? "25457" : "155968"} />
+              </div>
             </div>
           </fieldset>
           {/* 仕様 */}
