@@ -131,10 +131,10 @@ function LoadBar({ current, max, gmc, gr }) {
       <div className="flex items-center gap-2">
         <div className="flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden flex">
           {gmc > 0 && <div className="h-full bg-blue-500 transition-all" style={{ width: `${gmcPct}%` }} />}
-          {gr > 0 && <div className="h-full bg-indigo-400 transition-all" style={{ width: `${grPct}%` }} />}
+          {gr > 0 && <div className="h-full bg-orange-400 transition-all" style={{ width: `${grPct}%` }} />}
         </div>
         <span className="text-xs text-gray-500 whitespace-nowrap">
-          <span className="text-blue-600">{gmc}</span>/<span className="text-indigo-500">{gr}</span><span className="text-gray-400">/{max}</span>
+          <span className="text-blue-600 font-medium">{gmc}</span>/<span className="text-orange-500 font-medium">{gr}</span><span className="text-gray-400">/{max}</span>
         </span>
       </div>
     );
@@ -214,8 +214,8 @@ function DashboardTab({ projects, staff }) {
         </div>
         <div className="flex items-center gap-4 mt-4 pt-3 border-t border-gray-100 text-xs text-gray-400">
           <span className="flex items-center gap-1"><span className="w-3 h-2 bg-blue-500 rounded-sm inline-block"></span>GMC</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-indigo-400 rounded-sm inline-block"></span>GR</span>
-          <span className="ml-auto">数値: <span className="text-blue-600">GMC</span>/<span className="text-indigo-500">GR</span><span className="text-gray-400">/上限</span></span>
+          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-orange-400 rounded-sm inline-block"></span>GR</span>
+          <span className="ml-auto">数値: <span className="text-blue-600 font-medium">GMC</span>/<span className="text-orange-500 font-medium">GR</span><span className="text-gray-400">/上限</span></span>
         </div>
       </div>
       <div className="bg-white rounded-lg shadow-sm p-6">
@@ -779,8 +779,12 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
               </div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-auto pr-1">
-                <p className="text-xs text-gray-500 mb-2">スコア = 空き容量×10 + スキルマッチ30点</p>
-                {recommendations.map((s, i) => (
+                <p className="text-xs text-gray-500 mb-2">適性Pt = 空き容量×10 + スキルマッチ30点（高いほどおすすめ）</p>
+                {recommendations.map((s, i) => {
+                  const maxScore = recommendations[0]?.score || 1;
+                  const hpPct = Math.min((s.score / maxScore) * 100, 100);
+                  const hpColor = hpPct >= 80 ? "bg-emerald-500" : hpPct >= 50 ? "bg-yellow-400" : "bg-red-400";
+                  return (
                   <button key={s.id} onClick={() => setSelected(s.id)}
                     className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                       selected === s.id ? "border-indigo-500 bg-indigo-50" : "border-gray-200 hover:border-gray-300 bg-white"
@@ -796,12 +800,19 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
                         <Badge color={s.role === "エキスパート" ? "purple" : "blue"}>{s.role === "エキスパート" ? "E" : "D"}</Badge>
                         {s.skillMatch && <Badge color="green">一致</Badge>}
                       </div>
-                      <span className="text-xs text-gray-400">スコア {s.score}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-gray-400 tracking-wide">適性</span>
+                        <div className="w-16 h-3 bg-gray-200 rounded-full overflow-hidden border border-gray-300">
+                          <div className={`h-full rounded-full transition-all ${hpColor}`} style={{ width: `${hpPct}%` }} />
+                        </div>
+                        <span className="text-xs font-bold text-gray-600 w-7 text-right">{s.score}</span>
+                      </div>
                     </div>
                     <div className="mt-1.5"><LoadBar current={s.load} max={s.maxCases} /></div>
                     <div className="mt-1 text-xs text-gray-400">得意: {s.skills.join(", ")}</div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             )}
             {showAssign && (
