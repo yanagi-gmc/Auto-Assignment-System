@@ -780,11 +780,7 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
             ) : (
               <div className="space-y-2 max-h-96 overflow-auto pr-1">
                 <p className="text-xs text-gray-500 mb-2">適性Pt = 空き容量×10 + スキルマッチ30点（高いほどおすすめ）</p>
-                {recommendations.map((s, i) => {
-                  const maxScore = recommendations[0]?.score || 1;
-                  const hpPct = Math.min((s.score / maxScore) * 100, 100);
-                  const hpColor = hpPct >= 80 ? "bg-emerald-500" : hpPct >= 50 ? "bg-yellow-400" : "bg-red-400";
-                  return (
+                {recommendations.map((s, i) => (
                   <button key={s.id} onClick={() => setSelected(s.id)}
                     className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                       selected === s.id ? "border-indigo-500 bg-indigo-50" : "border-gray-200 hover:border-gray-300 bg-white"
@@ -800,19 +796,12 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
                         <Badge color={s.role === "エキスパート" ? "purple" : "blue"}>{s.role === "エキスパート" ? "E" : "D"}</Badge>
                         {s.skillMatch && <Badge color="green">一致</Badge>}
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-gray-400 tracking-wide">適性</span>
-                        <div className="w-16 h-3 bg-gray-200 rounded-full overflow-hidden border border-gray-300">
-                          <div className={`h-full rounded-full transition-all ${hpColor}`} style={{ width: `${hpPct}%` }} />
-                        </div>
-                        <span className="text-xs font-bold text-gray-600 w-7 text-right">{s.score}</span>
-                      </div>
+                      <span className="text-xs text-gray-400">適性 {s.score}</span>
                     </div>
                     <div className="mt-1.5"><LoadBar current={s.load} max={s.maxCases} /></div>
                     <div className="mt-1 text-xs text-gray-400">得意: {s.skills.join(", ")}</div>
                   </button>
-                  );
-                })}
+                ))}
               </div>
             )}
             {showAssign && (
