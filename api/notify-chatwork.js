@@ -19,26 +19,47 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Chatwork credentials not configured" });
   }
 
-  try {
-    const { title, author, type, genre, pages, deadline, productionNo } = req.body;
+  const DIRECTOR_ID = "2173520";  // 局長
+  const MANAGER_ID = "7951827";   // 管理者（柳さん）
 
-    // Chatworkメッセージ本文を組み立て（局長へTO通知付き）
-    const DIRECTOR_ID = "2173520";
-    const lines = [
-      `[To:${DIRECTOR_ID}]`,
-      "[info][title]📚 新規案件が登録されました[/title]",
-      `【種別】${type || "-"}`,
-      `【書名】${title || "未定"}`,
-      `【著者】${author || "-"}`,
-      genre ? `【ジャンル】${genre}` : null,
-      pages ? `【ページ数】${pages}` : null,
-      productionNo ? `【制作番号】${productionNo}` : null,
-      deadline ? `【刊行予定】${deadline}` : null,
-      "",
-      "担当者の割り振りをお願いいたします。",
-      "▶ https://auto-assignment-system.vercel.app",
-      "[/info]",
-    ].filter(Boolean).join("\n");
+  try {
+    const { type: notifyType, title, author, type, genre, pages, deadline, productionNo, staffName, expertName } = req.body;
+
+    let lines;
+
+    if (notifyType === "assigned") {
+      // --- 担当決定通知 → 管理者（柳さん）宛 ---
+      lines = [
+        `[To:${MANAGER_ID}]`,
+        "[info][title]✅ 担当者が決定しました[/title]",
+        `【種別】${type || "-"}`,
+        `【書名】${title || "未定"}`,
+        `【著者】${author || "-"}`,
+        staffName ? `【担当D】${staffName}` : null,
+        expertName ? `【担当E】${expertName}` : null,
+        "",
+        "LINE通知テキストを確認し、担当者へお知らせください。",
+        "▶ https://auto-assignment-system.vercel.app",
+        "[/info]",
+      ].filter(Boolean).join("\n");
+    } else {
+      // --- 新規案件登録通知 → 局長宛（既存） ---
+      lines = [
+        `[To:${DIRECTOR_ID}]`,
+        "[info][title]📚 新規案件が登録されました[/title]",
+        `【種別】${type || "-"}`,
+        `【書名】${title || "未定"}`,
+        `【著者】${author || "-"}`,
+        genre ? `【ジャンル】${genre}` : null,
+        pages ? `【ページ数】${pages}` : null,
+        productionNo ? `【制作番号】${productionNo}` : null,
+        deadline ? `【刊行予定】${deadline}` : null,
+        "",
+        "担当者の割り振りをお願いいたします。",
+        "▶ https://auto-assignment-system.vercel.app",
+        "[/info]",
+      ].filter(Boolean).join("\n");
+    }
 
     const response = await fetch(
       `https://api.chatwork.com/v2/rooms/${roomId}/messages`,

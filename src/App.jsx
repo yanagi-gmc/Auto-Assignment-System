@@ -2275,6 +2275,23 @@ export default function App() {
     if (proj) {
       const updated = { ...proj, assignedTo: staffId, expertId: expertId || null, status: "担当決定済", notified: false };
       await upsertProject(updated);
+      // Chatwork通知（担当決定 → 管理者へ）
+      const assignedStaff = staff.find(s => s.id === staffId);
+      const assignedExpert = expertId ? staff.find(s => s.id === expertId) : null;
+      try {
+        await fetch("/api/notify-chatwork", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            notifyType: "assigned",
+            title: updated.title,
+            author: updated.author,
+            type: updated.type,
+            staffName: assignedStaff?.name || "-",
+            expertName: assignedExpert?.name || null,
+          }),
+        });
+      } catch (e) { console.error("Chatwork assign notify failed:", e); }
     }
   };
 
