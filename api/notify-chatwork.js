@@ -19,8 +19,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Chatwork credentials not configured" });
   }
 
-  const DIRECTOR_ID = "2173520";  // 局長
-  const MANAGER_ID = "7951827";   // 管理者（柳さん）
+  const DIRECTOR_ID = "2173520";
+  const DIRECTOR_NAME = "坂本 洋介さん";
+  const MANAGER_ID = "7951827";
+  const MANAGER_NAME = "柳 智子さん";
 
   try {
     const { type: notifyType, title, author, type, genre, pages, deadline, productionNo, staffName, expertName } = req.body;
@@ -30,7 +32,7 @@ export default async function handler(req, res) {
     if (notifyType === "assigned") {
       // --- 担当決定通知 → 管理者（柳さん）宛 ---
       lines = [
-        `[To:${MANAGER_ID}]`,
+        `[To:${MANAGER_ID}]${MANAGER_NAME}`,
         "[info][title]✅ 担当者が決定しました[/title]",
         `【種別】${type || "-"}`,
         `【書名】${title || "未定"}`,
@@ -45,7 +47,7 @@ export default async function handler(req, res) {
     } else {
       // --- 新規案件登録通知 → 局長宛（既存） ---
       lines = [
-        `[To:${DIRECTOR_ID}]`,
+        `[To:${DIRECTOR_ID}]${DIRECTOR_NAME}`,
         "[info][title]📚 新規案件が登録されました[/title]",
         `【種別】${type || "-"}`,
         `【書名】${title || "未定"}`,
