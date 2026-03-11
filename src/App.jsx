@@ -20,8 +20,8 @@ const INITIAL_STAFF = [
   { id: 11, name: "長井奈々", role: "ディレクター", employment: "業務委託", skills: ["教育", "子育て"], maxCases: 20, notes: "" },
   { id: 12, name: "大和剛", role: "ディレクター", employment: "業務委託", skills: ["スポーツ", "趣味"], maxCases: 20, notes: "" },
   { id: 13, name: "兼光良枝", role: "ディレクター", employment: "業務委託", skills: ["歴史", "文学"], maxCases: 20, notes: "" },
-  { id: 14, name: "小森彩", role: "エキスパート", employment: "業務委託", skills: ["全般"], maxCases: 5, notes: "" },
-  { id: 15, name: "加藤美晴", role: "エキスパート", employment: "業務委託", skills: ["全般"], maxCases: 5, notes: "" },
+  { id: 14, name: "小森彩", role: "エキスパート", employment: "業務委託", skills: ["全般"], maxCases: 100, notes: "" },
+  { id: 15, name: "加藤美晴", role: "エキスパート", employment: "業務委託", skills: ["全般"], maxCases: 100, notes: "" },
   { id: 16, name: "山崎", role: "ディレクター", employment: "業務委託", skills: ["全般"], maxCases: 20, notes: "", retired: true },
 ];
 const GENRES = [
