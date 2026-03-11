@@ -1,126 +1,96 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
+import { supabase } from "./supabase";
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).href;
 // =============================================
 // 案件担当 割振りシステム（GMC / GR 対応版）
 // =============================================
 // --- スタッフデータ ---
-// ※得意分野は仮設定です。「スタッフ管理」タブから編集できます。
 const INITIAL_STAFF = [
-  { id: 1, name: "窪田雅也", role: "ディレクター", employment: "社員", skills: ["ビジネス", "経営"], maxCases: 8, notes: "" },
-  { id: 2, name: "首藤孝太郎", role: "ディレクター", employment: "社員", skills: ["ビジネス", "マーケティング"], maxCases: 8, notes: "" },
-  { id: 3, name: "安部佑介", role: "ディレクター", employment: "社員", skills: ["IT", "テクノロジー"], maxCases: 8, notes: "" },
-  { id: 4, name: "北川恵介", role: "ディレクター", employment: "社員", skills: ["教育", "自己啓発"], maxCases: 8, notes: "" },
-  { id: 5, name: "星合優希", role: "ディレクター", employment: "社員", skills: ["歴史", "社会"], maxCases: 8, notes: "" },
-  { id: 6, name: "稲場俊哉", role: "ディレクター", employment: "業務委託", skills: ["小説", "エッセイ"], maxCases: 8, notes: "" },
-  { id: 7, name: "渡邉禎則", role: "ディレクター", employment: "業務委託", skills: ["医療", "健康"], maxCases: 8, notes: "" },
-  { id: 8, name: "常世田琢", role: "ディレクター", employment: "業務委託", skills: ["ビジネス", "金融"], maxCases: 8, notes: "" },
-  { id: 9, name: "西村裕介", role: "ディレクター", employment: "業務委託", skills: ["ライフスタイル", "随筆"], maxCases: 8, notes: "鹿久保さんへ引き継ぐ→復活" },
-  { id: 10, name: "長田年伸", role: "ディレクター", employment: "業務委託", skills: ["医療", "科学"], maxCases: 8, notes: "" },
-  { id: 11, name: "長井奈々", role: "ディレクター", employment: "業務委託", skills: ["教育", "子育て"], maxCases: 8, notes: "" },
-  { id: 12, name: "大和剛", role: "ディレクター", employment: "業務委託", skills: ["スポーツ", "趣味"], maxCases: 8, notes: "" },
-  { id: 13, name: "兼光良枝", role: "ディレクター", employment: "業務委託", skills: ["歴史", "文学"], maxCases: 8, notes: "" },
+  { id: 1, name: "窪田雅也", role: "ディレクター", employment: "社員", skills: ["ビジネス", "経営"], maxCases: 20, notes: "" },
+  { id: 2, name: "首藤孝太郎", role: "ディレクター", employment: "社員", skills: ["ビジネス", "マーケティング"], maxCases: 20, notes: "" },
+  { id: 3, name: "安部佑介", role: "ディレクター", employment: "社員", skills: ["IT", "テクノロジー"], maxCases: 20, notes: "" },
+  { id: 4, name: "北川恵介", role: "ディレクター", employment: "社員", skills: ["教育", "自己啓発"], maxCases: 20, notes: "" },
+  { id: 5, name: "星合優希", role: "ディレクター", employment: "社員", skills: ["歴史", "社会"], maxCases: 20, notes: "" },
+  { id: 6, name: "稲場俊哉", role: "ディレクター", employment: "業務委託", skills: ["小説", "エッセイ"], maxCases: 20, notes: "" },
+  { id: 7, name: "渡邉禎則", role: "ディレクター", employment: "業務委託", skills: ["医療", "健康"], maxCases: 20, notes: "" },
+  { id: 8, name: "常世田琢", role: "ディレクター", employment: "業務委託", skills: ["ビジネス", "金融"], maxCases: 20, notes: "" },
+  { id: 9, name: "西村裕介", role: "ディレクター", employment: "業務委託", skills: ["ライフスタイル", "随筆"], maxCases: 20, notes: "鹿久保さんへ引き継ぐ→復活" },
+  { id: 10, name: "長田年伸", role: "ディレクター", employment: "業務委託", skills: ["医療", "科学"], maxCases: 20, notes: "" },
+  { id: 11, name: "長井奈々", role: "ディレクター", employment: "業務委託", skills: ["教育", "子育て"], maxCases: 20, notes: "" },
+  { id: 12, name: "大和剛", role: "ディレクター", employment: "業務委託", skills: ["スポーツ", "趣味"], maxCases: 20, notes: "" },
+  { id: 13, name: "兼光良枝", role: "ディレクター", employment: "業務委託", skills: ["歴史", "文学"], maxCases: 20, notes: "" },
   { id: 14, name: "小森彩", role: "エキスパート", employment: "業務委託", skills: ["全般"], maxCases: 5, notes: "" },
   { id: 15, name: "加藤美晴", role: "エキスパート", employment: "業務委託", skills: ["全般"], maxCases: 5, notes: "" },
+  { id: 16, name: "山崎", role: "ディレクター", employment: "業務委託", skills: ["全般"], maxCases: 20, notes: "", retired: true },
 ];
 const GENRES = [
   "ビジネス", "経営", "マーケティング", "医療", "健康", "IT", "テクノロジー",
   "教育", "自己啓発", "歴史", "社会", "小説", "エッセイ", "随筆",
   "金融", "料理", "ライフスタイル", "スポーツ", "趣味", "科学", "文学", "子育て", "その他"
 ];
-// --- サンプル案件（実際のPDFから抽出した形式） ---
-const SAMPLE_PROJECTS = [
-  {
-    id: 1, type: "GMC", status: "未割当", assignedTo: null,
-    registeredDate: "2026-02-27",
-    title: "文脈学",
-    subtitle: "「こいつ、何が言いたいん？」をなくす思考のトレーニング",
-    author: "山口郁未",
-    clientName: "株式会社mazuWA",
-    genre: "マーケティング",
-    deadline: "2026-06-26",
-    pages: 200, format: "四六判単行本", printRun: 3000,
-    salesRep: "泉華奈",
-    editContact: "景山哲太",
-    editPro: "株式会社G.B.",
-    editProContact: "坂尾昌昭",
-    writer: "丹羽祐太朗",
-    purpose: "共育プログラム 'Wow Camp' のブランディングと認知度向上／集客（PULL型営業の実現）",
-    targetReader: "プロダクト企画／マーケティング従事者、チーム力を高めたいマネージャー",
-    summary: "マーケティング思考から生まれた「文脈学」で、伝わる言語化力と本質をつかむ思考力を育てる。カンロ、資生堂、ヤンマーほか名だたる企業が導入。",
-    notes: "KO: 3/9、RMTG: 4/13",
-    pdfFile: "企画書TSO【承認】260217.pdf",
-  },
-  {
-    id: 2, type: "GR", status: "未割当", assignedTo: null,
-    registeredDate: "2026-02-27",
-    title: "続・新健康夜咄",
-    subtitle: "",
-    author: "髙山哲夫",
-    contractName: "高山哲夫",
-    genre: "医療",
-    roughUpDate: "2026-03-下旬",
-    submissionDate: "2026-07-上旬",
-    deadline: "2026-08-上旬",
-    pages: 296, format: "文庫／並製／右開き", price: 800,
-    productionNo: "25396",
-    grRep: "前田惇史",
-    designFee: 150000, illustFee: 30000, totalFee: 180000,
-    meetingFormat: "オンライン",
-    meetingTime: "C・30分（普通）",
-    targetReader: "病院関係者",
-    charCount: "約141,000文字",
-    summary: "岐阜県中津川市で長年地域医療に携わってきた「化石医師」による随筆集。地域医療の最前線で経験した様々なエピソードを綴る。前前著『新健康夜咄』の続編。",
-    notes: "8月案件だが制作前倒し希望。前著のデザインテイスト希望。リピーター。",
-    pdfFile: "カバー発注依頼_GR前田.pdf",
-  },
-  {
-    id: 100, type: "GMC", status: "担当決定済", assignedTo: 1,
-    registeredDate: "2026-02-10", title: "成功する経営者の習慣", author: "山口健一",
-    clientName: "株式会社ABC", genre: "経営", deadline: "2026-06-30", pages: 240,
-    format: "四六判単行本", salesRep: "営業A", editContact: "編集A",
-    summary: "経営者向けビジネス書", notes: "", pdfFile: "",
-  },
-  {
-    id: 101, type: "GMC", status: "担当決定済", assignedTo: 3,
-    registeredDate: "2026-02-12", title: "最新AIビジネス入門", author: "tech田中",
-    clientName: "テック株式会社", genre: "IT", deadline: "2026-07-15", pages: 280,
-    format: "四六判単行本", salesRep: "営業B", editContact: "編集B",
-    summary: "AI活用ビジネス書", notes: "", pdfFile: "",
-  },
-  {
-    id: 102, type: "GR", status: "担当決定済", assignedTo: 2,
-    registeredDate: "2026-02-15", title: "家庭でできる予防医学", author: "佐々木明",
-    genre: "健康", deadline: "2026-05-30", pages: 200, format: "四六判並製",
-    grRep: "GR担当A", productionNo: "25380",
-    summary: "予防医学の実践ガイド", notes: "", pdfFile: "",
-  },
-  {
-    id: 103, type: "GMC", status: "担当決定済", assignedTo: 4,
-    registeredDate: "2026-02-08", title: "未来の教育デザイン", author: "木下真一",
-    clientName: "教育出版社", genre: "教育", deadline: "2026-08-01", pages: 320,
-    format: "A5判単行本", salesRep: "営業C", editContact: "編集C",
-    summary: "教育改革ビジネス書", notes: "", pdfFile: "",
-  },
-  {
-    id: 104, type: "GR", status: "担当決定済", assignedTo: 6,
-    registeredDate: "2026-02-18", title: "東京の片隅で", author: "大田誠",
-    genre: "エッセイ", deadline: "2026-06-15", pages: 180, format: "四六判並製",
-    grRep: "GR担当B", productionNo: "25390",
-    summary: "都会暮らしのエッセイ集", notes: "", pdfFile: "",
-  },
-];
+// --- 案件データ（Supabaseから読み込み。空配列はフォールバック） ---
+const SAMPLE_PROJECTS = [];
+// --- Supabase ヘルパー ---
+function generateShareToken() {
+  const a = new Uint8Array(16);
+  crypto.getRandomValues(a);
+  return Array.from(a, b => b.toString(36).padStart(2, "0")).join("").slice(0, 24);
+}
+async function uploadPDFToStorage(file, projectId) {
+  const filePath = `${projectId}/${file.name}`;
+  const { error } = await supabase.storage.from("project-pdfs").upload(filePath, file, { cacheControl: "3600", upsert: true });
+  if (error) { console.error("PDF upload error:", error); return null; }
+  const { data: urlData } = supabase.storage.from("project-pdfs").getPublicUrl(filePath);
+  return urlData.publicUrl;
+}
+async function upsertProject(project) {
+  await supabase.from("projects").upsert({ id: project.id, data: project }, { onConflict: "id" });
+}
+async function upsertProjects(projectsArr) {
+  const rows = projectsArr.map(p => ({ id: p.id, data: p }));
+  for (let i = 0; i < rows.length; i += 500) {
+    await supabase.from("projects").upsert(rows.slice(i, i + 500), { onConflict: "id" });
+  }
+}
+async function upsertStaff(staffArr) {
+  const rows = staffArr.map(s => ({ id: s.id, data: s }));
+  await supabase.from("staff").upsert(rows, { onConflict: "id" });
+}
+function getShareUrl(project) {
+  return `${window.location.origin}/#/share/${project.shareToken}`;
+}
+function generateLINEText(scenario, project, staffMember, shareUrl) {
+  const type = project.type;
+  const title = project.title || "未定";
+  const author = project.author || "-";
+  const genre = project.genre || "-";
+  const deadline = project.deadline || "未定";
+  const pages = project.pages ? `${project.pages}P` : "-";
+  const format = project.format || "-";
+  const link = shareUrl ? `\n詳細・企画書: ${shareUrl}` : "";
+  if (scenario === "director") {
+    return `【新規案件】担当決定のお願い\n\n種別: ${type}\nタイトル: ${title}\n著者: ${author}\nジャンル: ${genre}\n納期: ${deadline}\nページ数: ${pages}\n判型: ${format}${link}\n\n担当者の割り振りをお願いいたします。`;
+  }
+  const name = staffMember?.name || "";
+  if (scenario === "employee") {
+    return `【案件担当のお知らせ】\n\n${name}さん\n\n新しい案件の担当をお願いします。\n\n種別: ${type}\nタイトル: ${title}\n著者: ${author}\nジャンル: ${genre}\n納期: ${deadline}\nページ数: ${pages}${link}\n\nよろしくお願いいたします。`;
+  }
+  if (scenario === "contractor" || scenario === "expert") {
+    return `【案件のご相談】\n\n${name}さん\n\n下記案件をお引き受けいただけないでしょうか。\n\n種別: ${type}\nタイトル: ${title}\n著者: ${author}\nジャンル: ${genre}\n納期: ${deadline}\nページ数: ${pages}${link}\n\nご検討のほど、よろしくお願いいたします。`;
+  }
+  return "";
+}
 // --- ユーティリティ ---
 function getStaffLoad(staffId, projects) {
-  return projects.filter(p => p.assignedTo === staffId && p.status === "担当決定済").length;
+  return projects.filter(p => (p.assignedTo === staffId || p.expertId === staffId) && p.status === "担当決定済").length;
 }
 function getRecommendations(project, staff, projects) {
-  return staff.map(s => {
+  return staff.filter(s => s.role !== "エキスパート" && !s.retired).map(s => {
     const load = getStaffLoad(s.id, projects);
     const capacityLeft = s.maxCases - load;
     const skillMatch = s.skills.includes(project.genre) || s.skills.includes("全般");
     let score = capacityLeft * 10 + (skillMatch ? 30 : 0);
-    if (s.role === "エキスパート") score -= 5;
     if (capacityLeft <= 0) score -= 100;
     return { ...s, load, capacityLeft, skillMatch, score };
   }).sort((a, b) => b.score - a.score);
@@ -148,15 +118,31 @@ function StatCard({ label, value, sub, color }) {
     </div>
   );
 }
-function LoadBar({ current, max }) {
+function LoadBar({ current, max, gmc, gr }) {
   const pct = Math.min((current / max) * 100, 100);
+  const showSplit = gmc !== undefined && gr !== undefined;
+  if (showSplit) {
+    const gmcPct = Math.min((gmc / max) * 100, 100);
+    const grPct = Math.min((gr / max) * 100, pct >= 100 ? 100 - gmcPct : 100);
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden flex">
+          {gmc > 0 && <div className="h-full bg-blue-500 transition-all" style={{ width: `${gmcPct}%` }} />}
+          {gr > 0 && <div className="h-full bg-indigo-400 transition-all" style={{ width: `${grPct}%` }} />}
+        </div>
+        <span className="text-xs text-gray-500 whitespace-nowrap">
+          <span className="text-blue-600">{gmc}</span>/<span className="text-indigo-500">{gr}</span><span className="text-gray-400">/{max}</span>
+        </span>
+      </div>
+    );
+  }
   const color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-green-500";
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-xs text-gray-500 whitespace-nowrap">{current}/{max}</span>
+      <span className="text-xs text-gray-500 whitespace-nowrap">{current}件/{max}件</span>
     </div>
   );
 }
@@ -177,9 +163,14 @@ function DashboardTab({ projects, staff }) {
   const assigned = projects.filter(p => p.status === "担当決定済").length;
   const archived = projects.filter(p => p.status === "入稿完了").length;
   const active = projects.filter(p => p.status !== "入稿完了").length;
+  const notifyPending = projects.filter(p => p.status === "担当決定済" && p.notified === false).length;
   const gmcCount = projects.filter(p => p.type === "GMC" && p.status !== "入稿完了").length;
   const grCount = projects.filter(p => p.type === "GR" && p.status !== "入稿完了").length;
-  const staffLoads = staff.map(s => ({ ...s, load: getStaffLoad(s.id, projects) }));
+  const activeStaff = staff.filter(s => !s.retired);
+  const staffLoads = activeStaff.map(s => {
+    const asgn = projects.filter(p => (p.assignedTo === s.id || p.expertId === s.id) && p.status === "担当決定済");
+    return { ...s, load: asgn.length, gmc: asgn.filter(p => p.type === "GMC").length, gr: asgn.filter(p => p.type === "GR").length };
+  });
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -187,7 +178,7 @@ function DashboardTab({ projects, staff }) {
         <StatCard label="未割当" value={unassigned} sub="要対応" color={unassigned > 0 ? "red" : "green"} />
         <StatCard label="担当決定済" value={assigned} color="green" />
         <StatCard label="入稿完了" value={archived} sub="アーカイブ済" color="purple" />
-        <StatCard label="スタッフ" value={staff.length} sub={`D:${staff.filter(s=>s.role==="ディレクター").length} E:${staff.filter(s=>s.role==="エキスパート").length}`} color="yellow" />
+        <StatCard label="スタッフ" value={activeStaff.length} sub={`D:${activeStaff.filter(s=>s.role==="ディレクター").length} E:${activeStaff.filter(s=>s.role==="エキスパート").length}`} color="yellow" />
       </div>
       {unassigned > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
@@ -198,6 +189,15 @@ function DashboardTab({ projects, staff }) {
           </div>
         </div>
       )}
+      {notifyPending > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 flex items-start gap-3">
+          <span className="text-orange-500 text-xl mt-0.5">!</span>
+          <div>
+            <p className="text-orange-800 font-semibold">担当者未通知の案件が {notifyPending} 件あります</p>
+            <p className="text-orange-600 text-sm mt-1">「案件一覧」タブから詳細を開き、LINE通知テキストをコピーして送信してください。</p>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-lg shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-800 mb-4">担当者別 稼働状況</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
@@ -205,44 +205,55 @@ function DashboardTab({ projects, staff }) {
             <div key={s.id} className="flex items-center gap-3">
               <div className="w-28 text-sm font-medium text-gray-700 truncate">{s.name}</div>
               <Badge color={s.role === "エキスパート" ? "purple" : "blue"}>{s.role === "エキスパート" ? "E" : "D"}</Badge>
-              <div className="flex-1"><LoadBar current={s.load} max={s.maxCases} /></div>
+              <div className="flex-1"><LoadBar current={s.load} max={s.maxCases} gmc={s.gmc} gr={s.gr} /></div>
             </div>
           ))}
         </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">種別内訳</h3>
-          <div className="flex items-end gap-4 h-32">
-            <div className="flex-1 flex flex-col items-center">
-              <div className="w-full bg-blue-500 rounded-t" style={{ height: `${Math.max((gmcCount / Math.max(gmcCount, grCount, 1)) * 100, 10)}%` }} />
-              <span className="text-xs text-gray-500 mt-2">GMC ({gmcCount})</span>
-            </div>
-            <div className="flex-1 flex flex-col items-center">
-              <div className="w-full bg-indigo-500 rounded-t" style={{ height: `${Math.max((grCount / Math.max(gmcCount, grCount, 1)) * 100, 10)}%` }} />
-              <span className="text-xs text-gray-500 mt-2">GR ({grCount})</span>
-            </div>
-          </div>
+        <div className="flex items-center gap-4 mt-4 pt-3 border-t border-gray-100 text-xs text-gray-400">
+          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-blue-500 rounded-sm inline-block"></span>GMC</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-indigo-400 rounded-sm inline-block"></span>GR</span>
+          <span className="ml-auto">数値: <span className="text-blue-600">GMC</span>/<span className="text-indigo-500">GR</span><span className="text-gray-400">/上限</span></span>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">直近の納期</h3>
-          <div className="space-y-2">
-            {projects
-              .filter(p => p.deadline)
-              .sort((a, b) => (a.deadline || "").localeCompare(b.deadline || ""))
-              .slice(0, 5)
-              .map(p => (
+      </div>
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">直近のKO日（GMC）</h3>
+        {(() => {
+          const today = new Date();
+          const koProjects = projects
+            .filter(p => p.type === "GMC" && p.status !== "入稿完了" && p.notes)
+            .map(p => {
+              const m = p.notes.match(/KO[:：]\s*(\d{1,2})\/(\d{1,2})/);
+              if (!m) return null;
+              const mo = parseInt(m[1]), da = parseInt(m[2]);
+              let yr = today.getFullYear();
+              const d = new Date(yr, mo - 1, da);
+              if (d < new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)) yr++;
+              const koDate = new Date(yr, mo - 1, da);
+              const diffDays = Math.round((koDate - today) / (1000 * 60 * 60 * 24));
+              return { ...p, koDate, koStr: `${mo}/${da}`, diffDays };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.koDate - b.koDate)
+            .slice(0, 8);
+          if (koProjects.length === 0) return <p className="text-sm text-gray-400">KO日が設定されている案件はありません</p>;
+          return (
+            <div className="space-y-2">
+              {koProjects.map(p => (
                 <div key={p.id} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2 truncate">
-                    <Badge color={p.type === "GMC" ? "blue" : "indigo"}>{p.type}</Badge>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.diffDays <= 7 ? "bg-red-100 text-red-700" : p.diffDays <= 14 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>
+                      KO {p.koStr}
+                    </span>
                     <span className="truncate text-gray-700">{p.title}</span>
                   </div>
-                  <span className="text-gray-500 text-xs whitespace-nowrap ml-2">{p.deadline}</span>
+                  <span className="text-gray-400 text-xs whitespace-nowrap ml-2">
+                    {p.diffDays <= 0 ? "期限超過" : p.diffDays <= 7 ? `あと${p.diffDays}日` : p.diffDays <= 14 ? `あと${p.diffDays}日` : "余裕"}
+                  </span>
                 </div>
-              ))
-            }
-          </div>
-        </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -519,6 +530,7 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
   const filtered = projects.filter(p => {
     if (filter === "unassigned" && p.status !== "未割当") return false;
     if (filter === "assigned" && p.status !== "担当決定済") return false;
+    if (filter === "notified_pending" && !(p.status === "担当決定済" && p.notified === false)) return false;
     if (filter === "archived" && p.status !== "入稿完了") return false;
     if (filter === "active" && p.status === "入稿完了") return false;
     if (typeFilter === "GMC" && p.type !== "GMC") return false;
@@ -531,8 +543,13 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
           !(p.genre || "").toLowerCase().includes(s)) return false;
     }
     return true;
+  }).sort((a, b) => {
+    if (a.status === "未割当" && b.status !== "未割当") return -1;
+    if (a.status !== "未割当" && b.status === "未割当") return 1;
+    return 0;
   });
   const archivedCount = projects.filter(p => p.status === "入稿完了").length;
+  const notifyPendingCount = projects.filter(p => p.status === "担当決定済" && p.notified === false).length;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -540,6 +557,12 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
           <button key={v} onClick={() => setFilter(v)}
             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === v ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{l}</button>
         ))}
+        {notifyPendingCount > 0 && (
+          <button onClick={() => setFilter("notified_pending")}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${filter === "notified_pending" ? "bg-orange-500 text-white" : "bg-orange-50 text-orange-600 hover:bg-orange-100"}`}>
+            通知未 <span className={`text-xs px-1.5 rounded-full ${filter === "notified_pending" ? "bg-white text-orange-600" : "bg-orange-500 text-white"}`}>{notifyPendingCount}</span>
+          </button>
+        )}
         <button onClick={() => setFilter("archived")}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${filter === "archived" ? "bg-gray-500 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
           アーカイブ {archivedCount > 0 && <span className={`text-xs px-1.5 rounded-full ${filter === "archived" ? "bg-white text-gray-700" : "bg-gray-400 text-white"}`}>{archivedCount}</span>}
@@ -560,13 +583,14 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
           <thead>
             <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
               <th className="px-4 py-3 text-left">種別</th>
-              <th className="px-4 py-3 text-left">書名</th>
               <th className="px-4 py-3 text-left">著者</th>
+              <th className="px-4 py-3 text-left">書名</th>
               <th className="px-4 py-3 text-left">ジャンル</th>
               <th className="px-4 py-3 text-left">納期</th>
               <th className="px-4 py-3 text-left">頁数</th>
               <th className="px-4 py-3 text-left">ステータス</th>
-              <th className="px-4 py-3 text-left">担当</th>
+              <th className="px-4 py-3 text-left">D担当</th>
+              <th className="px-4 py-3 text-left">E担当</th>
               <th className="px-4 py-3 text-left">操作</th>
             </tr>
           </thead>
@@ -574,16 +598,17 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
             {filtered.map(p => (
               <tr key={p.id} className={`hover:bg-gray-50 ${p.status === "未割当" ? "bg-yellow-50" : p.status === "入稿完了" ? "opacity-60" : ""}`}>
                 <td className="px-4 py-3"><Badge color={p.type === "GMC" ? "blue" : "indigo"}>{p.type}</Badge></td>
+                <td className="px-4 py-3 text-gray-600">{p.author}</td>
                 <td className="px-4 py-3">
                   <div className="font-medium text-gray-800">{p.title}</div>
                   {p.subtitle && <div className="text-xs text-gray-400 truncate max-w-xs">{p.subtitle}</div>}
                 </td>
-                <td className="px-4 py-3 text-gray-600">{p.author}</td>
                 <td className="px-4 py-3"><Badge color="gray">{p.genre}</Badge></td>
                 <td className="px-4 py-3 text-gray-600 text-xs">{p.deadline || "-"}</td>
                 <td className="px-4 py-3 text-gray-600">{p.pages || "-"}</td>
-                <td className="px-4 py-3"><Badge color={p.status === "未割当" ? "red" : p.status === "入稿完了" ? "gray" : "green"}>{p.status}</Badge></td>
+                <td className="px-4 py-3"><Badge color={p.status === "未割当" ? "red" : p.status === "入稿完了" ? "gray" : p.notified === false ? "orange" : "green"}>{p.status === "担当決定済" && p.notified === false ? "通知未" : p.status}</Badge></td>
                 <td className="px-4 py-3 text-gray-600 text-xs">{p.assignedTo ? staff.find(s => s.id === p.assignedTo)?.name || "-" : "-"}</td>
+                <td className="px-4 py-3 text-purple-600 text-xs">{p.expertId ? staff.find(s => s.id === p.expertId)?.name || "-" : "-"}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => onSelectProject(p)}
@@ -612,9 +637,12 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
 // =====================
 // 案件詳細＆割り振りモーダル
 // =====================
-function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onClose }) {
+function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onClose, onNotified }) {
   const [selected, setSelected] = useState(project.assignedTo);
   const [showAssign, setShowAssign] = useState(project.status === "未割当");
+  const [selectedExpert, setSelectedExpert] = useState(project.expertId || null);
+  const expertStaff = staff.filter(s => s.role === "エキスパート" && !s.retired);
+  const [showLINEText, setShowLINEText] = useState(false);
   const recommendations = getRecommendations(project, staff, projects);
   const isGMC = project.type === "GMC";
   return (
@@ -628,7 +656,13 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
               <Badge color="gray">{project.genre}</Badge>
               <Badge color={project.status === "未割当" ? "red" : "green"}>{project.status}</Badge>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowLINEText(true)}
+                className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-xs font-medium hover:bg-green-200 transition-colors border border-green-200">
+                LINE通知
+              </button>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
           </div>
           <h2 className="text-xl font-bold text-gray-800 mt-3">{project.title}</h2>
           {project.subtitle && <p className="text-sm text-gray-500 mt-1">{project.subtitle}</p>}
@@ -712,9 +746,11 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
               <div className="flex items-center gap-2 mt-3">
                 <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                 <span className="text-sm text-gray-700 truncate">{project.pdfFile}</span>
-                {project.pdfData && (
-                  <a href={project.pdfData} target="_blank" rel="noopener noreferrer"
+                {(project.pdfUrl || project.pdfData) ? (
+                  <a href={project.pdfUrl || project.pdfData} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-indigo-600 hover:underline whitespace-nowrap">開く</a>
+                ) : (
+                  <span className="text-xs text-orange-500 whitespace-nowrap">※編集から再アップロードしてください</span>
                 )}
               </div>
             )}
@@ -766,20 +802,37 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
               </div>
             )}
             {showAssign && (
-              <div className="mt-4 flex gap-3">
-                <button onClick={onClose}
-                  className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">
-                  キャンセル
-                </button>
-                <button
-                  onClick={() => { if (selected) { onAssign(project.id, selected); onClose(); } }}
-                  disabled={!selected}
-                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors ${
-                    selected ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-300 cursor-not-allowed"
-                  }`}>
-                  担当者を決定
-                </button>
-              </div>
+              <>
+                <div className="mt-4 border-t border-gray-200 pt-3">
+                  <h4 className="text-xs font-bold text-gray-600 mb-2">エキスパート（E担当）</h4>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setSelectedExpert(null)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        selectedExpert === null ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-500 hover:border-gray-300"
+                      }`}>なし</button>
+                    {expertStaff.map(s => (
+                      <button key={s.id} onClick={() => setSelectedExpert(s.id)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                          selectedExpert === s.id ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-500 hover:border-gray-300"
+                        }`}>{s.name}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-4 flex gap-3">
+                  <button onClick={onClose}
+                    className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={() => { if (selected) { onAssign(project.id, selected, selectedExpert); onClose(); } }}
+                    disabled={!selected}
+                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors ${
+                      selected ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-300 cursor-not-allowed"
+                    }`}>
+                    担当者を決定
+                  </button>
+                </div>
+              </>
             )}
             {project.status === "担当決定済" && !showAssign && onArchive && (
               <div className="mt-4 border-t border-gray-200 pt-4">
@@ -794,6 +847,9 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
           </div>
         </div>
       </div>
+      {showLINEText && (
+        <LINETextModal project={project} staff={staff} onClose={() => setShowLINEText(false)} onNotified={onNotified} />
+      )}
     </div>
   );
 }
@@ -1368,9 +1424,12 @@ function RegisterTab({ onRegister, onOpenCSVImport }) {
 // =====================
 // 案件編集モーダル
 // =====================
-function EditProjectModal({ project, onUpdate, onClose }) {
+function EditProjectModal({ project, onUpdate, onDelete, onClose }) {
   const [form, setForm] = useState({ ...project });
   const [saveError, setSaveError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const fileInputRef = React.useRef(null);
   const isGMC = project.type === "GMC";
   const update = (key, val) => setForm(prev => {
     const next = { ...prev, [key]: val };
@@ -1379,13 +1438,14 @@ function EditProjectModal({ project, onUpdate, onClose }) {
   });
   const inputClass = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
   const labelClass = "block text-xs font-medium text-gray-600 mb-1";
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.title || !form.author) {
       setSaveError("タイトルと著者名は必須です");
       return;
     }
     setSaveError("");
-    onUpdate({
+    setSaving(true);
+    const updated = {
       ...form,
       pages: parseInt(form.pages) || 0,
       printRun: parseInt(form.printRun) || 0,
@@ -1393,7 +1453,19 @@ function EditProjectModal({ project, onUpdate, onClose }) {
       designFee: parseInt(form.designFee) || 0,
       illustFee: parseInt(form.illustFee) || 0,
       totalFee: parseInt(form.totalFee) || (parseInt(form.designFee) || 0) + (parseInt(form.illustFee) || 0),
-    });
+    };
+    if (updated.pdfData && updated.pdfData.startsWith("blob:")) {
+      try {
+        const resp = await fetch(updated.pdfData);
+        const blob = await resp.blob();
+        const file = new File([blob], updated.pdfFile || "upload.pdf", { type: "application/pdf" });
+        const url = await uploadPDFToStorage(file, updated.id);
+        if (url) updated.pdfUrl = url;
+      } catch (e) { console.error("PDF upload failed:", e); }
+    }
+    delete updated.pdfData;
+    onUpdate(updated);
+    setSaving(false);
     onClose();
   };
   return (
@@ -1563,20 +1635,92 @@ function EditProjectModal({ project, onUpdate, onClose }) {
               <div><label className={labelClass}>備考</label><textarea className={inputClass} rows={2} value={form.notes || ""} onChange={e => update("notes", e.target.value)} /></div>
             )}
           </fieldset>
+          {/* 添付PDF */}
+          <fieldset className="border border-gray-200 rounded-lg p-4 space-y-3">
+            <legend className="text-sm font-bold text-gray-700 px-2">添付PDF</legend>
+            {(form.pdfUrl || form.pdfFile) && !form.pdfData && (
+              <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg p-3">
+                <svg className="w-5 h-5 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                <span className="text-sm text-gray-700 truncate flex-1">{form.pdfFile || "PDF"}</span>
+                {form.pdfUrl && (
+                  <a href={form.pdfUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline whitespace-nowrap">開く</a>
+                )}
+                <button type="button" onClick={() => { update("pdfFile", ""); update("pdfUrl", ""); }}
+                  className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap">削除</button>
+              </div>
+            )}
+            {form.pdfData && (
+              <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <svg className="w-5 h-5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                <span className="text-sm text-blue-700 truncate flex-1">{form.pdfFile || "新しいPDF"}</span>
+                <span className="text-xs text-blue-500">保存時にアップロード</span>
+                <button type="button" onClick={() => { update("pdfFile", project.pdfFile || ""); update("pdfData", ""); update("pdfUrl", project.pdfUrl || ""); }}
+                  className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap">取消</button>
+              </div>
+            )}
+            <div
+              className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer border-gray-300 hover:border-indigo-400 transition-colors"
+              onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("border-indigo-500", "bg-indigo-50"); }}
+              onDragLeave={e => { e.preventDefault(); e.currentTarget.classList.remove("border-indigo-500", "bg-indigo-50"); }}
+              onDrop={e => {
+                e.preventDefault();
+                e.currentTarget.classList.remove("border-indigo-500", "bg-indigo-50");
+                const file = e.dataTransfer.files[0];
+                if (file && file.type === "application/pdf") {
+                  update("pdfFile", file.name);
+                  update("pdfData", URL.createObjectURL(file));
+                }
+              }}
+            >
+              <input ref={fileInputRef} type="file" accept=".pdf" className="hidden"
+                onChange={e => { const file = e.target.files[0]; if (file) { update("pdfFile", file.name); update("pdfData", URL.createObjectURL(file)); } e.target.value = ""; }} />
+              <svg className="mx-auto h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <p className="mt-1 text-sm text-gray-500">{form.pdfFile ? "PDFを差し替え" : "PDFをアップロード"}</p>
+              <p className="text-xs text-gray-400">クリックまたはドラッグ&ドロップ</p>
+            </div>
+          </fieldset>
           {saveError && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{saveError}</div>
           )}
           {/* ボタン */}
           <div className="flex gap-3">
-            <button type="button" onClick={onClose}
+            <button type="button" onClick={onClose} disabled={saving}
               className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">
               キャンセル
             </button>
-            <button type="button" onClick={handleSave}
-              className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium text-white transition-colors ${isGMC ? "bg-blue-600 hover:bg-blue-700" : "bg-indigo-600 hover:bg-indigo-700"}`}>
-              変更を保存
+            <button type="button" onClick={handleSave} disabled={saving}
+              className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium text-white transition-colors ${isGMC ? "bg-blue-600 hover:bg-blue-700" : "bg-indigo-600 hover:bg-indigo-700"} ${saving ? "opacity-50" : ""}`}>
+              {saving ? "保存中..." : "変更を保存"}
             </button>
           </div>
+          {/* 削除セクション */}
+          {onDelete && (
+            <div className="border-t border-gray-200 pt-4 mt-2">
+              {!confirmDelete ? (
+                <button type="button" onClick={() => setConfirmDelete(true)}
+                  className="w-full px-4 py-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 text-sm font-medium transition-colors">
+                  この案件を削除する
+                </button>
+              ) : (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
+                  <p className="text-sm font-medium text-red-700">本当にこの案件を削除しますか？この操作は取り消せません。</p>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setConfirmDelete(false)}
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">
+                      キャンセル
+                    </button>
+                    <button type="button" onClick={() => { onDelete(project.id); onClose(); }}
+                      className="flex-1 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium transition-colors">
+                      削除する
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1615,7 +1759,7 @@ function StaffTab({ staff, setStaff, projects }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-500">ディレクター {staff.filter(s => s.role === "ディレクター").length}名 ／ エキスパート {staff.filter(s => s.role === "エキスパート").length}名</p>
+        <p className="text-sm text-gray-500">ディレクター {staff.filter(s => s.role === "ディレクター" && !s.retired).length}名 ／ エキスパート {staff.filter(s => s.role === "エキスパート" && !s.retired).length}名</p>
         <button onClick={() => setAdding(!adding)}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${adding ? "bg-gray-200 text-gray-600" : "bg-indigo-600 text-white hover:bg-indigo-700"}`}>
           {adding ? "キャンセル" : "+ スタッフ追加"}
@@ -1710,8 +1854,11 @@ function StaffTab({ staff, setStaff, projects }) {
                   );
                 }
                 return (
-                  <tr key={s.id} className="hover:bg-gray-50 group">
-                    <td className="px-3 py-3 font-medium text-gray-800">{s.name}</td>
+                  <tr key={s.id} className={`hover:bg-gray-50 group ${s.retired ? "opacity-50" : ""}`}>
+                    <td className="px-3 py-3 font-medium text-gray-800">
+                      {s.name}
+                      {s.retired && <Badge color="gray">退職</Badge>}
+                    </td>
                     <td className="px-3 py-3"><Badge color={s.employment === "社員" ? "blue" : "orange"}>{s.employment || "-"}</Badge></td>
                     <td className="px-3 py-3"><Badge color={s.role === "エキスパート" ? "purple" : "blue"}>{s.role}</Badge></td>
                     <td className="px-3 py-3 text-gray-600 text-xs">{s.skills.join(", ")}</td>
@@ -1721,9 +1868,14 @@ function StaffTab({ staff, setStaff, projects }) {
                     <td className="px-3 py-3">
                       <div className="flex gap-1">
                         <button onClick={() => startEdit(s)} className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200">編集</button>
-                        {load === 0 && (
-                          <button onClick={() => removeStaff(s.id)} className="px-2.5 py-1 bg-red-50 text-red-500 rounded text-xs font-medium hover:bg-red-100 opacity-0 group-hover:opacity-100 transition-opacity">削除</button>
-                        )}
+                        <button onClick={() => setStaff(prev => prev.map(st => st.id === s.id ? { ...st, retired: !st.retired } : st))}
+                          className={`px-2.5 py-1 rounded text-xs font-medium transition-opacity ${
+                            s.retired
+                              ? "bg-green-50 text-green-600 hover:bg-green-100"
+                              : "bg-amber-50 text-amber-600 hover:bg-amber-100 opacity-0 group-hover:opacity-100"
+                          }`}>
+                          {s.retired ? "復帰" : "退職"}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1733,7 +1885,7 @@ function StaffTab({ staff, setStaff, projects }) {
           </table>
         </div>
       </div>
-      <p className="text-xs text-gray-400">※担当案件がある場合は削除できません。削除ボタンは行ホバー時に表示されます。</p>
+      <p className="text-xs text-gray-400">※退職ボタンは行ホバー時に表示されます。退職済スタッフは復帰ボタンで復帰できます。</p>
     </div>
   );
 }
@@ -1743,12 +1895,13 @@ function StaffTab({ staff, setStaff, projects }) {
 function MonthlyTab({ projects, staff }) {
   const [typeFilter, setTypeFilter] = useState("GMC");
   const [roleFilter, setRoleFilter] = useState("ディレクター");
-  const filteredStaff = staff.filter(s => s.role === roleFilter);
+  const filteredStaff = staff.filter(s => s.role === roleFilter && !s.retired);
   const filteredProjects = projects.filter(p =>
     p.type === typeFilter &&
     p.status === "担当決定済" &&
-    p.assignedTo &&
-    filteredStaff.some(s => s.id === p.assignedTo)
+    (roleFilter === "エキスパート"
+      ? p.expertId && filteredStaff.some(s => s.id === p.expertId)
+      : p.assignedTo && filteredStaff.some(s => s.id === p.assignedTo))
   );
   function getDeliveryMonth(p) {
     const d = p.deadline || "";
@@ -1772,9 +1925,10 @@ function MonthlyTab({ projects, staff }) {
   });
   filteredProjects.forEach(p => {
     const month = getDeliveryMonth(p);
-    if (staffMonthCounts[p.assignedTo]) {
+    const sid = roleFilter === "エキスパート" ? p.expertId : p.assignedTo;
+    if (staffMonthCounts[sid]) {
       const key = allMonths.includes(month) ? month : "未定";
-      staffMonthCounts[p.assignedTo][key] = (staffMonthCounts[p.assignedTo][key] || 0) + 1;
+      staffMonthCounts[sid][key] = (staffMonthCounts[sid][key] || 0) + 1;
     }
   });
   const usedMonths = allMonths.filter(m =>
@@ -1872,32 +2026,303 @@ function MonthlyTab({ projects, staff }) {
   );
 }
 // =====================
+// 共有案件ページ
+// =====================
+function SharedProjectPage({ token }) {
+  const [project, setProject] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    async function fetch() {
+      const { data, error: err } = await supabase.from("projects").select("data").eq("data->>shareToken", token).single();
+      if (err || !data) { setError("案件が見つかりません"); }
+      else { setProject(data.data); }
+      setLoading(false);
+    }
+    fetch();
+  }, [token]);
+  if (loading) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+    </div>
+  );
+  if (error) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="bg-white rounded-xl shadow-lg p-8 max-w-md text-center">
+        <p className="text-gray-500 text-lg">{error}</p>
+      </div>
+    </div>
+  );
+  const isGMC = project.type === "GMC";
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <p className="text-xs text-gray-400">案件情報</p>
+          <h1 className="text-lg font-bold text-gray-800 mt-1">{project.title || "未定"}</h1>
+          {project.subtitle && <p className="text-sm text-gray-500">{project.subtitle}</p>}
+        </div>
+      </header>
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+        <div className="flex gap-2">
+          <Badge color={isGMC ? "blue" : "indigo"}>{project.type}</Badge>
+          <Badge color="gray">{project.genre || "-"}</Badge>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-5 space-y-3">
+          <h3 className="text-sm font-bold text-gray-700 border-b pb-2">案件情報</h3>
+          <InfoRow label="著者名" value={project.author} />
+          {isGMC && <InfoRow label="クライアント" value={project.clientName} />}
+          {!isGMC && <InfoRow label="契約者名" value={project.contractName} />}
+          <InfoRow label="ジャンル" value={project.genre} />
+          <InfoRow label="納期" value={project.deadline} />
+          <InfoRow label="ページ数" value={project.pages ? `${project.pages}P` : null} />
+          <InfoRow label="判型" value={project.format} />
+          {isGMC && <InfoRow label="発行部数" value={project.printRun ? `${project.printRun}部` : null} />}
+          {!isGMC && <InfoRow label="定価" value={project.price ? `¥${project.price}` : null} />}
+          {project.notes && <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">{project.notes}</div>}
+        </div>
+        {project.pdfUrl && (
+          <div className="bg-white rounded-lg shadow-sm p-5">
+            <h3 className="text-sm font-bold text-gray-700 mb-3">企画書PDF</h3>
+            <iframe src={project.pdfUrl} className="w-full h-96 border rounded-lg hidden sm:block" title="PDF" />
+            <a href={project.pdfUrl} target="_blank" rel="noopener noreferrer"
+              className="block sm:hidden px-4 py-3 bg-indigo-600 text-white rounded-lg text-center text-sm font-medium">
+              PDFを開く: {project.pdfFile || "PDF"}
+            </a>
+          </div>
+        )}
+        <p className="text-center text-xs text-gray-300 mt-8">案件担当 割振りシステム</p>
+      </main>
+    </div>
+  );
+}
+// =====================
+// LINE通知テキストモーダル
+// =====================
+function LINETextModal({ project, staff, onClose, onNotified }) {
+  const [ensuring, setEnsuring] = useState(false);
+  const [shareUrl, setShareUrl] = useState(project.shareToken ? getShareUrl(project) : null);
+  const assignedStaff = staff.find(s => s.id === project.assignedTo);
+  const expertAssigned = staff.find(s => s.id === project.expertId);
+  const scenarios = [];
+  scenarios.push({ label: "局長向け（担当決定依頼）", key: "director" });
+  if (assignedStaff) {
+    if (assignedStaff.employment === "社員") {
+      scenarios.push({ label: `${assignedStaff.name}（社員D）向け`, key: "employee" });
+    } else {
+      scenarios.push({ label: `${assignedStaff.name}（業務委託D）向け`, key: "contractor" });
+    }
+  }
+  if (expertAssigned) {
+    scenarios.push({ label: `${expertAssigned.name}（E）向け`, key: "expert" });
+  }
+  const [selected, setSelected] = useState(scenarios[0]?.key);
+  const [copied, setCopied] = useState(false);
+  const member = selected === "expert" ? expertAssigned : assignedStaff;
+  const text = generateLINEText(selected, project, member, shareUrl);
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(text); } catch {}
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    if (project.notified === false && onNotified) {
+      project.notified = true;
+      onNotified(project.id);
+      supabase.from("projects").update({ data: project }).eq("id", project.id);
+    }
+  };
+  // shareTokenが無ければ生成してSupabaseに保存
+  useEffect(() => {
+    if (!project.shareToken && !ensuring) {
+      setEnsuring(true);
+      const token = generateShareToken();
+      project.shareToken = token;
+      supabase.from("projects").update({ data: project }).eq("id", project.id)
+        .then(() => { setShareUrl(getShareUrl(project)); setEnsuring(false); });
+    }
+  }, []);
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b bg-green-50 rounded-t-xl flex items-center justify-between">
+          <h3 className="font-bold text-green-800">LINE通知テキスト</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="flex gap-2 flex-wrap">
+            {scenarios.map(s => (
+              <button key={s.key} onClick={() => { setSelected(s.key); setCopied(false); }}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${selected === s.key ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+          {ensuring && <p className="text-xs text-gray-400">共有リンクを生成中...</p>}
+          <pre className="bg-gray-50 border rounded-lg p-3 text-sm whitespace-pre-wrap font-sans max-h-64 overflow-auto">{text}</pre>
+          <button onClick={handleCopy}
+            className={`w-full py-3 rounded-lg font-medium text-sm transition-colors ${copied ? "bg-green-100 text-green-700" : "bg-green-600 text-white hover:bg-green-700"}`}>
+            {copied ? "コピーしました!" : "テキストをコピー"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+// =====================
 // メインアプリ
 // =====================
 export default function App() {
+  // --- 共有ページチェック ---
+  const hash = window.location.hash;
+  const shareMatch = hash.match(/^#\/share\/(.+)$/);
+  if (shareMatch) {
+    return <SharedProjectPage token={shareMatch[1]} />;
+  }
+
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("dashboard");
-  const [staff, setStaff] = useState(INITIAL_STAFF);
+  const [staff, setStaffRaw] = useState(INITIAL_STAFF);
   const [projects, setProjects] = useState(SAMPLE_PROJECTS);
   const [selectedProject, setSelectedProject] = useState(null);
   const [editingProject, setEditingProject] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
-  const handleAssign = (projectId, staffId) => {
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assignedTo: staffId, status: "担当決定済" } : p));
+  const [showLINEText, setShowLINEText] = useState(null);
+
+  // --- Supabase同期ラッパー ---
+  const setStaff = useCallback((updater) => {
+    setStaffRaw(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      upsertStaff(next);
+      return next;
+    });
+  }, []);
+
+  const setStaffWithSync = setStaff;
+
+  // --- 初回ロード ---
+  useEffect(() => {
+    async function load() {
+      try {
+        const [{ data: projRows }, { data: staffRows }] = await Promise.all([
+          supabase.from("projects").select("*"),
+          supabase.from("staff").select("*"),
+        ]);
+        if (projRows && projRows.length > 0) {
+          setProjects(projRows.map(r => ({ ...r.data, id: r.id })));
+        }
+        if (staffRows && staffRows.length > 0) {
+          setStaffRaw(staffRows.map(r => ({ ...r.data, id: r.id })));
+        } else {
+          // 初回: INITIAL_STAFFをSupabaseにアップロード
+          await upsertStaff(INITIAL_STAFF);
+        }
+      } catch (e) {
+        console.error("Supabase load error:", e);
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  // --- リアルタイム ---
+  useEffect(() => {
+    const projSub = supabase.channel("projects-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          setProjects(prev => prev.filter(p => p.id !== payload.old.id));
+        } else {
+          const updated = { ...payload.new.data, id: payload.new.id };
+          setProjects(prev => {
+            const idx = prev.findIndex(p => p.id === updated.id);
+            if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next; }
+            return [...prev, updated];
+          });
+        }
+      })
+      .subscribe();
+    const staffSub = supabase.channel("staff-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          setStaffRaw(prev => prev.filter(s => s.id !== payload.old.id));
+        } else {
+          const updated = { ...payload.new.data, id: payload.new.id };
+          setStaffRaw(prev => {
+            const idx = prev.findIndex(s => s.id === updated.id);
+            if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next; }
+            return [...prev, updated];
+          });
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(projSub); supabase.removeChannel(staffSub); };
+  }, []);
+
+  // --- ハンドラー ---
+  const handleAssign = async (projectId, staffId, expertId) => {
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assignedTo: staffId, expertId: expertId || null, status: "担当決定済", notified: false } : p));
+    const proj = projects.find(p => p.id === projectId);
+    if (proj) {
+      const updated = { ...proj, assignedTo: staffId, expertId: expertId || null, status: "担当決定済", notified: false };
+      await upsertProject(updated);
+    }
   };
-  const handleRegister = (newProject) => {
-    setProjects(prev => [...prev, { ...newProject, id: Date.now() }]);
+
+  const handleRegister = async (newProject) => {
+    const proj = { ...newProject, id: Date.now() };
+    // PDF をStorage にアップロード
+    if (proj.pdfData && proj.pdfData.startsWith("blob:")) {
+      try {
+        const resp = await fetch(proj.pdfData);
+        const blob = await resp.blob();
+        const file = new File([blob], proj.pdfFile || "upload.pdf", { type: "application/pdf" });
+        const url = await uploadPDFToStorage(file, proj.id);
+        if (url) { proj.pdfUrl = url; }
+      } catch (e) { console.error("PDF upload failed:", e); }
+    }
+    delete proj.pdfData;
+    setProjects(prev => [...prev, proj]);
+    await upsertProject(proj);
     setTab("projects");
   };
-  const handleUpdate = (updatedProject) => {
+
+  const handleUpdate = async (updatedProject) => {
     setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+    if (selectedProject && selectedProject.id === updatedProject.id) {
+      setSelectedProject(updatedProject);
+    }
+    await upsertProject(updatedProject);
   };
-  const handleBulkImport = (newProjects) => {
+
+  const handleBulkImport = async (newProjects) => {
     setProjects(prev => [...prev, ...newProjects]);
+    await upsertProjects(newProjects);
     setTab("projects");
   };
-  const handleArchive = (projectId) => {
+
+  const handleArchive = async (projectId) => {
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, status: "入稿完了" } : p));
+    const proj = projects.find(p => p.id === projectId);
+    if (proj) {
+      const updated = { ...proj, status: "入稿完了" };
+      await upsertProject(updated);
+    }
   };
+
+  const handleDelete = async (projectId) => {
+    setProjects(prev => prev.filter(p => p.id !== projectId));
+    await supabase.from("projects").delete().eq("id", projectId);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto"></div>
+          <p className="mt-4 text-sm text-gray-500">データを読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
   const tabs = [
     { id: "dashboard", label: "ダッシュボード" },
     { id: "projects", label: "案件一覧" },
@@ -1940,7 +2365,7 @@ export default function App() {
         {tab === "projects" && <ProjectListTab projects={projects} staff={staff} onSelectProject={setSelectedProject} onEditProject={setEditingProject} />}
         {tab === "monthly" && <MonthlyTab projects={projects} staff={staff} />}
         {tab === "register" && <RegisterTab onRegister={handleRegister} onOpenCSVImport={() => setShowCSVImport(true)} />}
-        {tab === "staff" && <StaffTab staff={staff} setStaff={setStaff} projects={projects} />}
+        {tab === "staff" && <StaffTab staff={staff} setStaff={setStaffWithSync} projects={projects} />}
       </main>
       {selectedProject && (
         <ProjectDetailModal
@@ -1950,12 +2375,14 @@ export default function App() {
           onAssign={handleAssign}
           onArchive={handleArchive}
           onClose={() => setSelectedProject(null)}
+          onNotified={(projectId) => setProjects(prev => prev.map(p => p.id === projectId ? { ...p, notified: true } : p))}
         />
       )}
       {editingProject && (
         <EditProjectModal
           project={editingProject}
           onUpdate={handleUpdate}
+          onDelete={handleDelete}
           onClose={() => setEditingProject(null)}
         />
       )}
