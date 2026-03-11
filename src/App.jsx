@@ -38,14 +38,17 @@ function generateShareToken() {
   return Array.from(a, b => b.toString(36).padStart(2, "0")).join("").slice(0, 24);
 }
 async function uploadPDFToStorage(file, projectId) {
-  const filePath = `${projectId}/${file.name}`;
-  const { error } = await supabase.storage.from("project-pdfs").upload(filePath, file, { cacheControl: "3600", upsert: true });
+  const safeName = `${projectId}_${Date.now()}.pdf`;
+  const filePath = `${projectId}/${safeName}`;
+  const { error } = await supabase.storage.from("project-pdfs").upload(filePath, file, { cacheControl: "3600", upsert: true, contentType: "application/pdf" });
   if (error) { console.error("PDF upload error:", error); return null; }
   const { data: urlData } = supabase.storage.from("project-pdfs").getPublicUrl(filePath);
   return urlData.publicUrl;
 }
 async function upsertProject(project) {
-  await supabase.from("projects").upsert({ id: project.id, data: project }, { onConflict: "id" });
+  const clean = { ...project };
+  delete clean.pdfData; // blob URLはDB保存不可
+  await supabase.from("projects").upsert({ id: clean.id, data: clean }, { onConflict: "id" });
 }
 async function upsertProjects(projectsArr) {
   const rows = projectsArr.map(p => ({ id: p.id, data: p }));
@@ -1139,26 +1142,34 @@ function RegisterTab({ onRegister, onOpenCSVImport }) {
       setIsParsing(false);
     }
   };
-  const handleSubmit = (e) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.title || !form.author) {
       setSubmitError("タイトルと著者名は必須です");
       return;
     }
     setSubmitError("");
-    onRegister({
-      ...form,
-      type: projectType,
-      pages: parseInt(form.pages) || 0,
-      printRun: parseInt(form.printRun) || 0,
-      price: parseInt(form.price) || 0,
-      designFee: parseInt(form.designFee) || 0,
-      illustFee: parseInt(form.illustFee) || 0,
-      totalFee: parseInt(form.totalFee) || (parseInt(form.designFee) || 0) + (parseInt(form.illustFee) || 0),
-      status: "未割当",
-      assignedTo: null,
-    });
-    projectType === "GMC" ? setGmcForm(emptyGMC) : setGrForm(emptyGR);
+    setIsSubmitting(true);
+    try {
+      await onRegister({
+        ...form,
+        type: projectType,
+        pages: parseInt(form.pages) || 0,
+        printRun: parseInt(form.printRun) || 0,
+        price: parseInt(form.price) || 0,
+        designFee: parseInt(form.designFee) || 0,
+        illustFee: parseInt(form.illustFee) || 0,
+        totalFee: parseInt(form.totalFee) || (parseInt(form.designFee) || 0) + (parseInt(form.illustFee) || 0),
+        status: "未割当",
+        assignedTo: null,
+      });
+      projectType === "GMC" ? setGmcForm(emptyGMC) : setGrForm(emptyGR);
+    } catch (err) {
+      setSubmitError("登録に失敗しました: " + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   const inputClass = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
   const labelClass = "block text-xs font-medium text-gray-600 mb-1";
@@ -1410,11 +1421,12 @@ function RegisterTab({ onRegister, onOpenCSVImport }) {
           {submitError && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{submitError}</div>
           )}
-          <button type="submit"
+          <button type="submit" disabled={isSubmitting}
             className={`w-full py-3 rounded-lg font-medium text-white transition-colors text-sm ${
+              isSubmitting ? "bg-gray-400 cursor-not-allowed" :
               projectType === "GMC" ? "bg-blue-600 hover:bg-blue-700" : "bg-indigo-600 hover:bg-indigo-700"
             }`}>
-            {projectType === "GMC" ? "GMC案件を登録" : "GR案件を登録"}
+            {isSubmitting ? "登録中…（PDFアップロード中）" : projectType === "GMC" ? "GMC案件を登録" : "GR案件を登録"}
           </button>
         </form>
       </div>
