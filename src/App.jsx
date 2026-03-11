@@ -2293,6 +2293,22 @@ export default function App() {
     delete proj.pdfData;
     setProjects(prev => [...prev, proj]);
     await upsertProject(proj);
+    // Chatwork自動通知（局長へ）
+    try {
+      await fetch("/api/notify-chatwork", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: proj.title,
+          author: proj.author,
+          type: proj.type,
+          genre: proj.genre,
+          pages: proj.pages,
+          deadline: proj.deadline,
+          productionNo: proj.productionNo,
+        }),
+      });
+    } catch (e) { console.error("Chatwork notify failed:", e); }
     setTab("projects");
   };
 
