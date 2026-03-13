@@ -527,7 +527,7 @@ function CSVImportModal({ staff, onImport, onClose }) {
 // 案件一覧 タブ
 // =====================
 function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
-  const [filter, setFilter] = useState("active");
+  const [filter, setFilter] = useState("unassigned");
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
   const filtered = projects.filter(p => {
