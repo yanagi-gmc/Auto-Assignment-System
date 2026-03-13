@@ -242,15 +242,15 @@ function DashboardTab({ projects, staff }) {
           return (
             <div className="space-y-2">
               {koProjects.map(p => (
-                <div key={p.id} className="flex items-center justify-between text-sm">
+                <div key={p.id} className={`flex items-center justify-between text-sm rounded-lg px-3 py-2 ${p.diffDays <= 0 ? "bg-red-600 text-white" : p.diffDays === 1 ? "bg-red-500 text-white" : p.diffDays === 2 ? "bg-red-400 text-white" : p.diffDays === 3 ? "bg-red-100 border border-red-300" : p.diffDays <= 7 ? "bg-orange-50 border border-orange-200" : ""}`}>
                   <div className="flex items-center gap-2 truncate">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.diffDays <= 7 ? "bg-red-100 text-red-700" : p.diffDays <= 14 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.diffDays <= 0 ? "bg-white/20 text-white" : p.diffDays <= 3 ? "bg-red-600 text-white" : p.diffDays <= 7 ? "bg-orange-500 text-white" : p.diffDays <= 14 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>
                       KO {p.koStr}
                     </span>
-                    <span className="truncate text-gray-700">{p.clientName || p.author || p.title}</span>
+                    <span className={`truncate ${p.diffDays <= 2 ? "text-white font-medium" : "text-gray-700"}`}>{p.clientName || p.author || p.title}</span>
                   </div>
-                  <span className="text-gray-400 text-xs whitespace-nowrap ml-2">
-                    {p.diffDays <= 0 ? "期限超過" : p.diffDays <= 7 ? `あと${p.diffDays}日` : p.diffDays <= 14 ? `あと${p.diffDays}日` : "余裕"}
+                  <span className={`text-xs font-bold whitespace-nowrap ml-2 ${p.diffDays <= 0 ? "text-white animate-pulse" : p.diffDays <= 1 ? "text-white animate-pulse" : p.diffDays <= 3 ? "text-red-700" : p.diffDays <= 7 ? "text-orange-600" : "text-gray-400"}`}>
+                    {p.diffDays <= 0 ? "🔥 期限超過！" : p.diffDays === 1 ? "⚠️ 明日！" : p.diffDays === 2 ? "⚠️ あと2日" : p.diffDays === 3 ? "あと3日" : p.diffDays <= 7 ? `あと${p.diffDays}日` : p.diffDays <= 14 ? `あと${p.diffDays}日` : "余裕"}
                   </span>
                 </div>
               ))}
