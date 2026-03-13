@@ -63,7 +63,7 @@ async function upsertStaff(staffArr) {
 function getShareUrl(project) {
   return `${window.location.origin}/#/share/${project.shareToken}`;
 }
-function generateLINEText(scenario, project, staffMember, shareUrl) {
+function generateLINEText(scenario, project, staffMember, shareUrl, allStaff) {
   const type = project.type;
   const title = project.title || "未定";
   const author = project.author || "-";
@@ -72,15 +72,24 @@ function generateLINEText(scenario, project, staffMember, shareUrl) {
   const pages = project.pages ? `${project.pages}P` : "-";
   const format = project.format || "-";
   const link = shareUrl ? `\n詳細・企画書: ${shareUrl}` : "";
+  // 担当者一覧を生成（自分以外のメンバーがわかるように）
+  const members = [];
+  const mainD = allStaff?.find(s => s.id === project.assignedTo);
+  const subD = project.subDirectorId ? allStaff?.find(s => s.id === project.subDirectorId) : null;
+  const expert = project.expertId ? allStaff?.find(s => s.id === project.expertId) : null;
+  if (mainD) members.push(mainD.name + "さん");
+  if (subD) members.push(subD.name + "さん");
+  if (expert) members.push(expert.name + "さん");
+  const memberLine = members.length > 0 ? `\n担当: ${members.join("・")}` : "";
   if (scenario === "director") {
     return `【新規案件】担当決定のお願い\n\n種別: ${type}\nタイトル: ${title}\n著者: ${author}\nジャンル: ${genre}\n納期: ${deadline}\nページ数: ${pages}\n判型: ${format}${link}\n\n担当者の割り振りをお願いいたします。`;
   }
   const name = staffMember?.name || "";
   if (scenario === "employee") {
-    return `【案件担当のお知らせ】\n\n${name}さん\n\n新しい案件の担当をお願いします。\n\n種別: ${type}\nタイトル: ${title}\n著者: ${author}\nジャンル: ${genre}\n納期: ${deadline}\nページ数: ${pages}${link}\n\nよろしくお願いいたします。`;
+    return `【案件担当のお知らせ】\n\n${name}さん\n\n新しい案件の担当をお願いします。\n\n種別: ${type}\nタイトル: ${title}\n著者: ${author}\nジャンル: ${genre}\n納期: ${deadline}\nページ数: ${pages}${memberLine}${link}\n\nよろしくお願いいたします。`;
   }
   if (scenario === "contractor" || scenario === "expert") {
-    return `【案件のご相談】\n\n${name}さん\n\n下記案件をお引き受けいただけないでしょうか。\n\n種別: ${type}\nタイトル: ${title}\n著者: ${author}\nジャンル: ${genre}\n納期: ${deadline}\nページ数: ${pages}${link}\n\nご検討のほど、よろしくお願いいたします。`;
+    return `【案件のご相談】\n\n${name}さん\n\n下記案件をお引き受けいただけないでしょうか。\n\n種別: ${type}\nタイトル: ${title}\n著者: ${author}\nジャンル: ${genre}\n納期: ${deadline}\nページ数: ${pages}${memberLine}${link}\n\nご検討のほど、よろしくお願いいたします。`;
   }
   return "";
 }
@@ -2185,7 +2194,7 @@ function LINETextModal({ project, staff, onClose, onNotified }) {
   const [selected, setSelected] = useState(scenarios[0]?.key);
   const [copied, setCopied] = useState(false);
   const member = selected === "expert" ? expertAssigned : assignedStaff;
-  const text = generateLINEText(selected, project, member, shareUrl);
+  const text = generateLINEText(selected, project, member, shareUrl, staff);
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(text); } catch {}
     setCopied(true);
