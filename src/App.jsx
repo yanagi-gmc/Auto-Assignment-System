@@ -883,23 +883,26 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
                 </div>
               </>
             )}
-            {project.status === "担当決定済" && !showAssign && project.notified === false && (
-              <div className="mt-4 border-t border-gray-200 pt-4">
-                <button
-                  onClick={() => { onNotified(project.id); }}
-                  className="w-full px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                  ✅ 担当者へ通知完了
-                </button>
-                <p className="text-xs text-gray-400 mt-1 text-center">LINE等で担当者に連絡済みの場合にクリック</p>
-              </div>
-            )}
-            {project.status === "担当決定済" && !showAssign && project.notified !== false && (
-              <div className="mt-4 border-t border-gray-200 pt-4">
-                <div className="flex items-center justify-center gap-2 text-green-600 text-sm font-medium py-2">
-                  <span>✅</span><span>通知済み</span>
+            {project.status === "担当決定済" && !showAssign && (() => {
+              const notifiedList = project.notifiedList || [];
+              const needIds = [project.assignedTo, project.subDirectorId, project.expertId].filter(Boolean);
+              const allDone = needIds.length > 0 && needIds.every(id => notifiedList.includes(id));
+              const doneCount = needIds.filter(id => notifiedList.includes(id)).length;
+              return allDone ? (
+                <div className="mt-4 border-t border-gray-200 pt-4">
+                  <div className="flex items-center justify-center gap-2 text-green-600 text-sm font-medium py-2">
+                    <span>✅</span><span>全員通知済み（{doneCount}/{needIds.length}人）</span>
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="mt-4 border-t border-gray-200 pt-4">
+                  <div className="text-center text-sm text-orange-600 font-medium mb-2">
+                    通知: {doneCount}/{needIds.length}人完了
+                  </div>
+                  <p className="text-xs text-gray-400 text-center">LINE通知テキストからコピーすると自動で通知済みになります</p>
+                </div>
+              );
+            })()}
             {project.status === "担当決定済" && !showAssign && onArchive && (
               <div className="mt-3">
                 <button
@@ -2178,31 +2181,46 @@ function LINETextModal({ project, staff, onClose, onNotified }) {
   const [ensuring, setEnsuring] = useState(false);
   const [shareUrl, setShareUrl] = useState(project.shareToken ? getShareUrl(project) : null);
   const assignedStaff = staff.find(s => s.id === project.assignedTo);
+  const subDirector = staff.find(s => s.id === project.subDirectorId);
   const expertAssigned = staff.find(s => s.id === project.expertId);
   const scenarios = [];
   scenarios.push({ label: "局長向け（担当決定依頼）", key: "director" });
   if (assignedStaff) {
     if (assignedStaff.employment === "社員") {
-      scenarios.push({ label: `${assignedStaff.name}（社員D）向け`, key: "employee" });
+      scenarios.push({ label: `${assignedStaff.name}（メインD）向け`, key: "employee", staffId: assignedStaff.id });
     } else {
-      scenarios.push({ label: `${assignedStaff.name}（業務委託D）向け`, key: "contractor" });
+      scenarios.push({ label: `${assignedStaff.name}（メインD）向け`, key: "contractor", staffId: assignedStaff.id });
+    }
+  }
+  if (subDirector) {
+    if (subDirector.employment === "社員") {
+      scenarios.push({ label: `${subDirector.name}（サブD）向け`, key: "sub_employee", staffId: subDirector.id });
+    } else {
+      scenarios.push({ label: `${subDirector.name}（サブD）向け`, key: "sub_contractor", staffId: subDirector.id });
     }
   }
   if (expertAssigned) {
-    scenarios.push({ label: `${expertAssigned.name}（E）向け`, key: "expert" });
+    scenarios.push({ label: `${expertAssigned.name}（E）向け`, key: "expert", staffId: expertAssigned.id });
   }
+  // 通知が必要な人のリスト（局長は除く）
+  const needNotifyIds = scenarios.filter(s => s.staffId).map(s => s.staffId);
+  const notifiedList = project.notifiedList || [];
   const [selected, setSelected] = useState(scenarios[0]?.key);
   const [copied, setCopied] = useState(false);
-  const member = selected === "expert" ? expertAssigned : assignedStaff;
-  const text = generateLINEText(selected, project, member, shareUrl, staff);
+  const currentScenario = scenarios.find(s => s.key === selected);
+  const member = selected === "expert" ? expertAssigned : (selected?.startsWith("sub_") ? subDirector : assignedStaff);
+  const lineKey = selected?.startsWith("sub_") ? (selected === "sub_employee" ? "employee" : "contractor") : selected;
+  const text = generateLINEText(lineKey, project, member, shareUrl, staff);
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(text); } catch {}
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    if (project.notified === false && onNotified) {
-      project.notified = true;
-      onNotified(project.id);
-      supabase.from("projects").update({ data: project }).eq("id", project.id);
+    // 人別通知追跡
+    const staffId = currentScenario?.staffId;
+    if (staffId && !notifiedList.includes(staffId)) {
+      const newList = [...notifiedList, staffId];
+      const allNotified = needNotifyIds.every(id => newList.includes(id));
+      onNotified(project.id, newList, allNotified);
     }
   };
   // shareTokenが無ければ生成してSupabaseに保存
@@ -2224,13 +2242,22 @@ function LINETextModal({ project, staff, onClose, onNotified }) {
         </div>
         <div className="p-4 space-y-4">
           <div className="flex gap-2 flex-wrap">
-            {scenarios.map(s => (
-              <button key={s.key} onClick={() => { setSelected(s.key); setCopied(false); }}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${selected === s.key ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                {s.label}
-              </button>
-            ))}
+            {scenarios.map(s => {
+              const done = s.staffId && notifiedList.includes(s.staffId);
+              return (
+                <button key={s.key} onClick={() => { setSelected(s.key); setCopied(false); }}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${selected === s.key ? "bg-green-600 text-white" : done ? "bg-green-100 text-green-700 ring-1 ring-green-300" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                  {done ? "✅ " : ""}{s.label}
+                </button>
+              );
+            })}
           </div>
+          {needNotifyIds.length > 0 && (
+            <div className="text-xs text-gray-500">
+              通知済み: {notifiedList.length}/{needNotifyIds.length}人
+              {notifiedList.length >= needNotifyIds.length && " ✅ 全員通知完了！"}
+            </div>
+          )}
           {ensuring && <p className="text-xs text-gray-400">共有リンクを生成中...</p>}
           <pre className="bg-gray-50 border rounded-lg p-3 text-sm whitespace-pre-wrap font-sans max-h-64 overflow-auto">{text}</pre>
           <button onClick={handleCopy}
@@ -2468,11 +2495,12 @@ export default function App() {
           onAssign={handleAssign}
           onArchive={handleArchive}
           onClose={() => setSelectedProject(null)}
-          onNotified={(projectId) => {
-            setProjects(prev => prev.map(p => p.id === projectId ? { ...p, notified: true } : p));
-            setSelectedProject(prev => prev && prev.id === projectId ? { ...prev, notified: true } : prev);
+          onNotified={(projectId, newNotifiedList, allDone) => {
+            const updates = { notifiedList: newNotifiedList, notified: allDone ? true : false };
+            setProjects(prev => prev.map(p => p.id === projectId ? { ...p, ...updates } : p));
+            setSelectedProject(prev => prev && prev.id === projectId ? { ...prev, ...updates } : prev);
             const proj = projects.find(p => p.id === projectId);
-            if (proj) upsertProject({ ...proj, notified: true });
+            if (proj) upsertProject({ ...proj, ...updates });
           }}
         />
       )}
