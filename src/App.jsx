@@ -478,7 +478,7 @@ function CSVImportModal({ staff, onImport, onClose }) {
                     {preview.map(row => (
                       <tr key={row._rowNum} className={!row._valid ? "bg-red-50 opacity-60" : ""}>
                         <td className="px-3 py-2 text-gray-400">{row._rowNum}</td>
-                        <td className="px-3 py-2"><Badge color={row.type === "GMC" ? "blue" : "indigo"}>{row.type}</Badge></td>
+                        <td className="px-3 py-2"><Badge color={row.type === "GMC" ? "blue" : "orange"}>{row.type}</Badge></td>
                         <td className="px-3 py-2 font-medium text-gray-800 max-w-xs truncate">{row.title || <span className="text-red-500">未入力</span>}</td>
                         <td className="px-3 py-2 text-gray-600">{row.author || <span className="text-red-500">未入力</span>}</td>
                         <td className="px-3 py-2">
@@ -600,7 +600,7 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
           <tbody className="divide-y divide-gray-100">
             {filtered.map(p => (
               <tr key={p.id} className={`hover:bg-gray-50 ${p.status === "未割当" ? "bg-yellow-50" : p.status === "入稿完了" ? "opacity-60" : ""}`}>
-                <td className="px-4 py-3"><Badge color={p.type === "GMC" ? "blue" : "indigo"}>{p.type}</Badge></td>
+                <td className="px-4 py-3"><Badge color={p.type === "GMC" ? "blue" : "orange"}>{p.type}</Badge></td>
                 <td className="px-4 py-3 text-gray-600">{p.author}</td>
                 <td className="px-4 py-3">
                   <div className="font-medium text-gray-800">{p.title}</div>
