@@ -225,7 +225,7 @@ function DashboardTab({ projects, staff }) {
           const koProjects = projects
             .filter(p => p.type === "GMC" && p.status !== "入稿完了" && p.notes)
             .map(p => {
-              const m = p.notes.match(/KO[:：]\s*(\d{1,2})\/(\d{1,2})/);
+              const m = p.notes.match(/KO\s*[:：/．.・\s]\s*(\d{1,2})\s*[\/．.]\s*(\d{1,2})/i);
               if (!m) return null;
               const mo = parseInt(m[1]), da = parseInt(m[2]);
               let yr = today.getFullYear();
@@ -247,7 +247,7 @@ function DashboardTab({ projects, staff }) {
                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.diffDays <= 7 ? "bg-red-100 text-red-700" : p.diffDays <= 14 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>
                       KO {p.koStr}
                     </span>
-                    <span className="truncate text-gray-700">{p.title}</span>
+                    <span className="truncate text-gray-700">{p.clientName || p.author || p.title}</span>
                   </div>
                   <span className="text-gray-400 text-xs whitespace-nowrap ml-2">
                     {p.diffDays <= 0 ? "期限超過" : p.diffDays <= 7 ? `あと${p.diffDays}日` : p.diffDays <= 14 ? `あと${p.diffDays}日` : "余裕"}
