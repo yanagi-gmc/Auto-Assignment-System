@@ -874,8 +874,25 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
                 </div>
               </>
             )}
-            {project.status === "担当決定済" && !showAssign && onArchive && (
+            {project.status === "担当決定済" && !showAssign && project.notified === false && (
               <div className="mt-4 border-t border-gray-200 pt-4">
+                <button
+                  onClick={() => { onNotified(project.id); }}
+                  className="w-full px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                  ✅ 担当者へ通知完了
+                </button>
+                <p className="text-xs text-gray-400 mt-1 text-center">LINE等で担当者に連絡済みの場合にクリック</p>
+              </div>
+            )}
+            {project.status === "担当決定済" && !showAssign && project.notified !== false && (
+              <div className="mt-4 border-t border-gray-200 pt-4">
+                <div className="flex items-center justify-center gap-2 text-green-600 text-sm font-medium py-2">
+                  <span>✅</span><span>通知済み</span>
+                </div>
+              </div>
+            )}
+            {project.status === "担当決定済" && !showAssign && onArchive && (
+              <div className="mt-3">
                 <button
                   onClick={() => { onArchive(project.id); onClose(); }}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-100 text-sm font-medium transition-colors">
@@ -2442,7 +2459,12 @@ export default function App() {
           onAssign={handleAssign}
           onArchive={handleArchive}
           onClose={() => setSelectedProject(null)}
-          onNotified={(projectId) => setProjects(prev => prev.map(p => p.id === projectId ? { ...p, notified: true } : p))}
+          onNotified={(projectId) => {
+            setProjects(prev => prev.map(p => p.id === projectId ? { ...p, notified: true } : p));
+            setSelectedProject(prev => prev && prev.id === projectId ? { ...prev, notified: true } : prev);
+            const proj = projects.find(p => p.id === projectId);
+            if (proj) upsertProject({ ...proj, notified: true });
+          }}
         />
       )}
       {editingProject && (
