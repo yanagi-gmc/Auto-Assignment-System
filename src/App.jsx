@@ -202,23 +202,6 @@ function DashboardTab({ projects, staff }) {
         </div>
       )}
       <div className="bg-white rounded-lg shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">担当者別 稼働状況</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-          {staffLoads.map(s => (
-            <div key={s.id} className="flex items-center gap-3">
-              <div className="w-28 text-sm font-medium text-gray-700 truncate">{s.name}</div>
-              <Badge color={s.role === "エキスパート" ? "purple" : "blue"}>{s.role === "エキスパート" ? "E" : "D"}</Badge>
-              <div className="flex-1"><LoadBar current={s.load} max={s.maxCases} gmc={s.gmc} gr={s.gr} /></div>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-4 mt-4 pt-3 border-t border-gray-100 text-xs text-gray-400">
-          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-blue-500 rounded-sm inline-block"></span>GMC</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-orange-400 rounded-sm inline-block"></span>GR</span>
-          <span className="ml-auto">数値: <span className="text-blue-600 font-medium">GMC</span>/<span className="text-orange-500 font-medium">GR</span><span className="text-gray-400">/上限</span></span>
-        </div>
-      </div>
-      <div className="bg-white rounded-lg shadow-sm p-6">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">直近のKO日（GMC）</h3>
         {(() => {
           const today = new Date();
@@ -257,6 +240,23 @@ function DashboardTab({ projects, staff }) {
             </div>
           );
         })()}
+      </div>
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">担当者別 稼働状況</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+          {staffLoads.map(s => (
+            <div key={s.id} className="flex items-center gap-3">
+              <div className="w-28 text-sm font-medium text-gray-700 truncate">{s.name}</div>
+              <Badge color={s.role === "エキスパート" ? "purple" : "blue"}>{s.role === "エキスパート" ? "E" : "D"}</Badge>
+              <div className="flex-1"><LoadBar current={s.load} max={s.maxCases} gmc={s.gmc} gr={s.gr} /></div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-4 mt-4 pt-3 border-t border-gray-100 text-xs text-gray-400">
+          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-blue-500 rounded-sm inline-block"></span>GMC</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-orange-400 rounded-sm inline-block"></span>GR</span>
+          <span className="ml-auto">数値: <span className="text-blue-600 font-medium">GMC</span>/<span className="text-orange-500 font-medium">GR</span><span className="text-gray-400">/上限</span></span>
+        </div>
       </div>
     </div>
   );
