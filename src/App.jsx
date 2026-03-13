@@ -885,21 +885,32 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
             )}
             {project.status === "担当決定済" && !showAssign && (() => {
               const notifiedList = project.notifiedList || [];
-              const needIds = [project.assignedTo, project.subDirectorId, project.expertId].filter(Boolean);
-              const allDone = needIds.length > 0 && needIds.every(id => notifiedList.includes(id));
-              const doneCount = needIds.filter(id => notifiedList.includes(id)).length;
-              return allDone ? (
+              const members = [
+                project.assignedTo ? { id: project.assignedTo, label: "メインD", name: staff.find(s => s.id === project.assignedTo)?.name } : null,
+                project.subDirectorId ? { id: project.subDirectorId, label: "サブD", name: staff.find(s => s.id === project.subDirectorId)?.name } : null,
+                project.expertId ? { id: project.expertId, label: "E", name: staff.find(s => s.id === project.expertId)?.name } : null,
+              ].filter(Boolean);
+              const allDone = members.length > 0 && members.every(m => notifiedList.includes(m.id));
+              const doneCount = members.filter(m => notifiedList.includes(m.id)).length;
+              return (
                 <div className="mt-4 border-t border-gray-200 pt-4">
-                  <div className="flex items-center justify-center gap-2 text-green-600 text-sm font-medium py-2">
-                    <span>✅</span><span>全員通知済み（{doneCount}/{needIds.length}人）</span>
+                  <div className={`text-center text-sm font-medium mb-3 ${allDone ? "text-green-600" : "text-orange-600"}`}>
+                    {allDone ? `✅ 全員通知済み（${doneCount}/${members.length}人）` : `通知: ${doneCount}/${members.length}人完了`}
                   </div>
-                </div>
-              ) : (
-                <div className="mt-4 border-t border-gray-200 pt-4">
-                  <div className="text-center text-sm text-orange-600 font-medium mb-2">
-                    通知: {doneCount}/{needIds.length}人完了
+                  <div className="space-y-1.5">
+                    {members.map(m => {
+                      const done = notifiedList.includes(m.id);
+                      return (
+                        <div key={m.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm ${done ? "bg-green-50 text-green-700" : "bg-orange-50 text-orange-700"}`}>
+                          <span>{done ? "✅" : "⏳"}</span>
+                          <span className="font-medium">{m.name}</span>
+                          <span className="text-xs opacity-60">（{m.label}）</span>
+                          <span className="ml-auto text-xs font-medium">{done ? "通知済み" : "未通知"}</span>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <p className="text-xs text-gray-400 text-center">LINE通知テキストからコピーすると自動で通知済みになります</p>
+                  {!allDone && <p className="text-xs text-gray-400 mt-2 text-center">LINE通知テキストからコピーすると自動で通知済みになります</p>}
                 </div>
               );
             })()}
