@@ -86,7 +86,7 @@ function generateLINEText(scenario, project, staffMember, shareUrl) {
 }
 // --- ユーティリティ ---
 function getStaffLoad(staffId, projects) {
-  return projects.filter(p => (p.assignedTo === staffId || p.expertId === staffId) && p.status === "担当決定済").length;
+  return projects.filter(p => (p.assignedTo === staffId || p.subDirectorId === staffId || p.expertId === staffId) && p.status === "担当決定済").length;
 }
 function getRecommendations(project, staff, projects) {
   return staff.filter(s => s.role !== "エキスパート" && !s.retired).map(s => {
@@ -171,7 +171,7 @@ function DashboardTab({ projects, staff }) {
   const grCount = projects.filter(p => p.type === "GR" && p.status !== "入稿完了").length;
   const activeStaff = staff.filter(s => !s.retired);
   const staffLoads = activeStaff.map(s => {
-    const asgn = projects.filter(p => (p.assignedTo === s.id || p.expertId === s.id) && p.status === "担当決定済");
+    const asgn = projects.filter(p => (p.assignedTo === s.id || p.subDirectorId === s.id || p.expertId === s.id) && p.status === "担当決定済");
     return { ...s, load: asgn.length, gmc: asgn.filter(p => p.type === "GMC").length, gr: asgn.filter(p => p.type === "GR").length };
   }).sort((a, b) => (a.role === "エキスパート" ? 1 : 0) - (b.role === "エキスパート" ? 1 : 0));
   return (
@@ -593,6 +593,7 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
               <th className="px-4 py-3 text-left">頁数</th>
               <th className="px-4 py-3 text-left">ステータス</th>
               <th className="px-4 py-3 text-left">D担当</th>
+              <th className="px-4 py-3 text-left">Dサブ</th>
               <th className="px-4 py-3 text-left">E担当</th>
               <th className="px-4 py-3 text-left">操作</th>
             </tr>
@@ -611,6 +612,7 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
                 <td className="px-4 py-3 text-gray-600">{p.pages || "-"}</td>
                 <td className="px-4 py-3"><Badge color={p.status === "未割当" ? "red" : p.status === "入稿完了" ? "gray" : p.notified === false ? "orange" : "green"}>{p.status === "担当決定済" && p.notified === false ? "通知未" : p.status}</Badge></td>
                 <td className="px-4 py-3 text-gray-600 text-xs">{p.assignedTo ? staff.find(s => s.id === p.assignedTo)?.name || "-" : "-"}</td>
+                <td className="px-4 py-3 text-blue-600 text-xs">{p.subDirectorId ? staff.find(s => s.id === p.subDirectorId)?.name || "-" : "-"}</td>
                 <td className="px-4 py-3 text-purple-600 text-xs">{p.expertId ? staff.find(s => s.id === p.expertId)?.name || "-" : "-"}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
@@ -642,6 +644,7 @@ function ProjectListTab({ projects, staff, onSelectProject, onEditProject }) {
 // =====================
 function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onClose, onNotified }) {
   const [selected, setSelected] = useState(project.assignedTo);
+  const [selectedSub, setSelectedSub] = useState(project.subDirectorId || null);
   const [showAssign, setShowAssign] = useState(project.status === "未割当");
   const [selectedExpert, setSelectedExpert] = useState(project.expertId || null);
   const expertStaff = staff.filter(s => s.role === "エキスパート" && !s.retired);
@@ -768,14 +771,33 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
               )}
             </div>
             {project.status === "担当決定済" && !showAssign ? (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="font-medium text-green-800">
-                  {staff.find(s => s.id === project.assignedTo)?.name || "-"}
-                </p>
-                <p className="text-xs text-green-600 mt-1">
-                  {staff.find(s => s.id === project.assignedTo)?.role}
-                  ・得意: {staff.find(s => s.id === project.assignedTo)?.skills.join(", ")}
-                </p>
+              <div className="space-y-2">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded">メイン</span>
+                    <p className="font-medium text-green-800">
+                      {staff.find(s => s.id === project.assignedTo)?.name || "-"}
+                    </p>
+                  </div>
+                  <p className="text-xs text-green-600 mt-1">
+                    {staff.find(s => s.id === project.assignedTo)?.role}
+                    ・得意: {staff.find(s => s.id === project.assignedTo)?.skills.join(", ")}
+                  </p>
+                </div>
+                {project.subDirectorId && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">サブ</span>
+                      <p className="font-medium text-blue-800">
+                        {staff.find(s => s.id === project.subDirectorId)?.name || "-"}
+                      </p>
+                    </div>
+                    <p className="text-xs text-blue-600 mt-1">
+                      {staff.find(s => s.id === project.subDirectorId)?.role}
+                      ・得意: {staff.find(s => s.id === project.subDirectorId)?.skills.join(", ")}
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-auto pr-1">
@@ -807,6 +829,21 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
             {showAssign && (
               <>
                 <div className="mt-4 border-t border-gray-200 pt-3">
+                  <h4 className="text-xs font-bold text-gray-600 mb-2">サブディレクター（任意）</h4>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setSelectedSub(null)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        selectedSub === null ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-500 hover:border-gray-300"
+                      }`}>なし</button>
+                    {recommendations.filter(s => s.id !== selected).map(s => (
+                      <button key={s.id} onClick={() => setSelectedSub(s.id)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                          selectedSub === s.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-500 hover:border-gray-300"
+                        }`}>{s.name}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-4 border-t border-gray-200 pt-3">
                   <h4 className="text-xs font-bold text-gray-600 mb-2">エキスパート（E担当）</h4>
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => setSelectedExpert(null)}
@@ -827,7 +864,7 @@ function ProjectDetailModal({ project, staff, projects, onAssign, onArchive, onC
                     キャンセル
                   </button>
                   <button
-                    onClick={() => { if (selected) { onAssign(project.id, selected, selectedExpert); onClose(); } }}
+                    onClick={() => { if (selected) { onAssign(project.id, selected, selectedExpert, selectedSub); onClose(); } }}
                     disabled={!selected}
                     className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors ${
                       selected ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-300 cursor-not-allowed"
@@ -2269,14 +2306,15 @@ export default function App() {
   }, []);
 
   // --- ハンドラー ---
-  const handleAssign = async (projectId, staffId, expertId) => {
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assignedTo: staffId, expertId: expertId || null, status: "担当決定済", notified: false } : p));
+  const handleAssign = async (projectId, staffId, expertId, subDirectorId) => {
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, assignedTo: staffId, subDirectorId: subDirectorId || null, expertId: expertId || null, status: "担当決定済", notified: false } : p));
     const proj = projects.find(p => p.id === projectId);
     if (proj) {
-      const updated = { ...proj, assignedTo: staffId, expertId: expertId || null, status: "担当決定済", notified: false };
+      const updated = { ...proj, assignedTo: staffId, subDirectorId: subDirectorId || null, expertId: expertId || null, status: "担当決定済", notified: false };
       await upsertProject(updated);
       // Chatwork通知（担当決定 → 管理者へ）
       const assignedStaff = staff.find(s => s.id === staffId);
+      const assignedSub = subDirectorId ? staff.find(s => s.id === subDirectorId) : null;
       const assignedExpert = expertId ? staff.find(s => s.id === expertId) : null;
       try {
         await fetch("/api/notify-chatwork", {
@@ -2288,6 +2326,7 @@ export default function App() {
             author: updated.author,
             type: updated.type,
             staffName: assignedStaff?.name || "-",
+            subName: assignedSub?.name || null,
             expertName: assignedExpert?.name || null,
           }),
         });

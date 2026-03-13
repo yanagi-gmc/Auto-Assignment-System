@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   const MANAGER_NAME = "柳 智子さん";
 
   try {
-    const { type: notifyType, title, author, type, genre, pages, deadline, productionNo, staffName, expertName } = req.body;
+    const { type: notifyType, title, author, type, genre, pages, deadline, productionNo, staffName, subName, expertName } = req.body;
 
     let lines;
 
@@ -37,7 +37,8 @@ export default async function handler(req, res) {
         `【種別】${type || "-"}`,
         `【書名】${title || "未定"}`,
         `【著者】${author || "-"}`,
-        staffName ? `【担当D】${staffName}` : null,
+        staffName ? `【Dメイン】${staffName}` : null,
+        subName ? `【Dサブ】${subName}` : null,
         expertName ? `【担当E】${expertName}` : null,
         "",
         "LINE通知テキストを確認し、担当者へお知らせください。",
